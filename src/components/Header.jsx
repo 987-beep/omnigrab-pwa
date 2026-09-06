@@ -16,8 +16,12 @@ import {
   Menu,
   X,
   Cloud,
-  Zap
+  Zap,
+  Users,
+  UserCheck,
+  ChevronDown
 } from 'lucide-react';
+import { getActiveUserProfile, getColorClasses } from '../utils/userManagement';
 
 export default function Header({ 
   activeTab, 
@@ -26,9 +30,12 @@ export default function Header({
   installPrompt, 
   triggerInstall,
   isExtensionLinked,
-  onOpenCompanionModal 
+  onOpenCompanionModal,
+  onOpenUserModal 
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const activeUser = getActiveUserProfile();
+  const colorStyles = getColorClasses(activeUser?.color);
 
   const tabs = [
     { id: 'extract', label: 'Universal Extractor', icon: Download, badge: '4K / Reels' },
@@ -66,11 +73,11 @@ export default function Header({
                   OMNIGRAB<span className="text-cyan-400 ml-1">PRO</span>
                 </span>
                 <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-brand-500/20 text-brand-300 border border-brand-500/30">
-                  TURSO DB
+                  MULTI-USER
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-medium hidden sm:block">
-                Universal Video, Photo & Audio Downloader
+                Universal Multi-Device Cloud Downloader
               </p>
             </div>
           </div>
@@ -104,9 +111,29 @@ export default function Header({
             })}
           </nav>
 
-          {/* Status Indicators */}
+          {/* Status Indicators & User Switcher */}
           <div className="flex items-center gap-2 sm:gap-3">
             
+            {/* Multi-User Profile Switcher Badge */}
+            <button
+              onClick={onOpenUserModal}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl border transition-all cursor-pointer ${colorStyles.bg} ${colorStyles.border} hover:scale-105 shadow-glow`}
+              title="Click to Switch Profile, Add Family User, or View Tenant Vault"
+            >
+              <div className="w-6 h-6 rounded-lg bg-surface-950 flex items-center justify-center text-sm shadow-inner">
+                {activeUser.avatar || '⚡'}
+              </div>
+              <div className="text-left hidden sm:block">
+                <div className="text-xs font-black text-white flex items-center gap-1">
+                  <span>{activeUser.name}</span>
+                  <ChevronDown className="w-3 h-3 text-slate-400" />
+                </div>
+                <div className="text-[9px] text-slate-300 font-mono">
+                  {activeUser.role} Profile
+                </div>
+              </div>
+            </button>
+
             {/* Companion Extension Pairing Status Pill */}
             <button
               onClick={onOpenCompanionModal}
@@ -119,7 +146,7 @@ export default function Header({
             >
               <Puzzle className={`w-3.5 h-3.5 ${isExtensionLinked ? 'text-emerald-400' : 'text-amber-400 animate-spin'}`} />
               <span className="font-mono text-[11px]">
-                {isExtensionLinked ? 'Extension: Paired' : 'Setup Extension (Step 2)'}
+                {isExtensionLinked ? 'Extension: Paired' : 'Setup Extension'}
               </span>
             </button>
 
@@ -190,6 +217,26 @@ export default function Header({
                 </button>
               );
             })}
+
+            {/* Mobile Profile Switcher Button */}
+            <button
+              onClick={() => {
+                onOpenUserModal();
+                setMobileMenuOpen(false);
+              }}
+              className="col-span-2 flex items-center justify-between p-3 rounded-xl bg-surface-900 border border-white/10 text-cyan-200 font-bold text-xs"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{activeUser.avatar || '⚡'}</span>
+                <div>
+                  <div className="text-white font-bold">{activeUser.name}</div>
+                  <div className="text-[10px] text-slate-400">{activeUser.role} Account</div>
+                </div>
+              </div>
+              <span className="text-[10px] px-2 py-1 rounded bg-brand-600 text-white font-bold">
+                Switch Profile
+              </span>
+            </button>
 
             {/* Mobile Companion Setup Button */}
             <button

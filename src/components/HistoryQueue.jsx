@@ -10,7 +10,7 @@ import {
   Sparkles,
   HardDrive,
   Copy,
-  CheckCircle2,
+  CheckCircle2, 
   Share2,
   Database,
   Cloud,
@@ -20,7 +20,11 @@ import {
   Laptop,
   ShieldCheck,
   Zap,
-  Calendar
+  Calendar,
+  Users,
+  Send,
+  Lock,
+  ArrowRight
 } from 'lucide-react';
 import { 
   clearHistory, 
@@ -30,28 +34,41 @@ import {
   fetchTursoBookmarks, 
   addTursoBookmark, 
   deleteTursoBookmark,
-  triggerMidnightPrune
+  triggerMidnightPrune,
+  transferItemToUser
 } from '../utils/api';
+import { 
+  getActiveUserProfile, 
+  getLocalProfiles, 
+  getColorClasses 
+} from '../utils/userManagement';
 
-export default function HistoryQueue({ history, onClearHistory, showToast, onSelectUrl }) {
+export default function HistoryQueue({ history, onClearHistory, showToast, onSelectUrl, onOpenUserModal }) {
   const [filter, setFilter] = useState('ALL');
   const [copiedId, setCopiedId] = useState(null);
-  const [historySource, setHistorySource] = useState('cloud'); // 'cloud' (Turso) or 'local'
   const [cloudItems, setCloudItems] = useState([]);
   const [bookmarks, setBookmarks] = useState([]);
   const [loadingCloud, setLoadingCloud] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState('history'); // 'history', 'bookmarks', 'maintenance'
+  const [activeSubTab, setActiveSubTab] = useState('history'); // 'history', 'bookmarks', 'transfer', 'maintenance'
   
+  // Transfer Modal State
+  const [transferringItem, setTransferringItem] = useState(null);
+  const [targetUserId, setTargetUserId] = useState('');
+
   // Maintenance State
   const [pruning, setPruning] = useState(false);
   const [pruneReport, setPruneReport] = useState(null);
 
+  const activeUser = getActiveUserProfile();
+  const profiles = getLocalProfiles();
+  const colorStyles = getColorClasses(activeUser?.color);
+
   const loadTursoData = async () => {
     setLoadingCloud(true);
     try {
-      const items = await fetchTursoHistory();
+      const items = await fetchTursoHistory(activeUser.id);
       setCloudItems(items);
-      const bmarks = await fetchTursoBookmarks();
+      const bmarks = await fetchTursoBookmarks(activeUser.id);
       setBookmarks(bmarks);
     } catch (e) {
       console.error('Turso fetch err:', e);
@@ -62,6 +79,15 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
 
   useEffect(() => {
     loadTursoData();
+  }, [activeUser.id]);
+
+  // Listen for user switches across the app
+  useEffect(() => {
+    const handleUserChange = () => {
+      loadTursoData();
+    };
+    window.addEventListener('omnigrab-user-changed', handleUserChange);
+    return () => window.removeEventListener('omnigrab-user-changed', handleUserChange);
   }, []);
 
   const handleCopy = (id, link) => {
@@ -78,9 +104,9 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
         title: item.title,
         thumbnail: item.thumbnail,
         platform: item.platform || 'Web',
-        notes: `Saved from ${item.quality || 'HD'}`
-      });
-      showToast('Saved to Turso Cloud Bookmarks!', 'success');
+        notes: `Saved to ${activeUser.name}'s Vault`
+      }, activeUser.id);
+      showToast(`Saved to ${activeUser.name}'s Cloud Bookmarks!`, 'success');
       loadTursoData();
     } catch {
       showToast('Failed to bookmark', 'error');
@@ -88,10 +114,22 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
   };
 
   const handleDeleteItem = async (id) => {
-    if (historySource === 'cloud') {
-      await deleteTursoHistory(id);
-      setCloudItems(prev => prev.filter(i => i.id !== id));
-      showToast('Deleted from cloud storage', 'info');
+    await deleteTursoHistory(id, activeUser.id);
+    setCloudItems(prev => prev.filter(i => i.id !== id));
+    showToast('Deleted from user storage', 'info');
+  };
+
+  const handleExecuteTransfer = async (e) => {
+    e.preventDefault();
+    if (!transferringItem || !targetUserId) return;
+    try {
+      await transferItemToUser(transferringItem, targetUserId);
+      const targetProfile = profiles.find(p => p.id === targetUserId);
+      showToast(`Transferred "${transferringItem.title}" to ${targetProfile?.name || 'user'}!`, 'success');
+      setTransferringItem(null);
+      setTargetUserId('');
+    } catch {
+      showToast('Transfer failed', 'error');
     }
   };
 
@@ -100,7 +138,7 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
     try {
       const res = await triggerMidnightPrune();
       setPruneReport(res);
-      showToast(`Pruned ${res.purged_download_records || res.purged_records || 0} temporary download records!`, 'success');
+      showToast(`Pruned ${res.purged_download_records || res.purged_records || 0} temporary download records across all users!`, 'success');
       loadTursoData();
     } catch {
       showToast('Prune check completed', 'info');
@@ -109,7 +147,7 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
     }
   };
 
-  const itemsToDisplay = (historySource === 'cloud' && cloudItems.length > 0) ? cloudItems : history;
+  const itemsToDisplay = cloudItems.length > 0 ? cloudItems : history;
 
   const filteredHistory = itemsToDisplay.filter(item => {
     const mType = (item.media_type || item.type || '').toLowerCase();
@@ -123,61 +161,60 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
   return (
     <div className="space-y-8 animate-fadeIn max-w-5xl mx-auto">
       
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 py-4 border-b border-white/10">
-        <div>
-          <h2 className="text-2xl sm:text-3xl font-black text-white flex items-center gap-2">
-            <Cloud className="w-6 h-6 text-cyan-400" />
-            <span>Turso Cloud Sync & Download Manager</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Synchronized across all your personal devices (Android PWA, Chrome Extension, Desktop) with 02:00 AM auto-pruning.
-          </p>
+      {/* Active User Banner */}
+      <div className={`glass-panel p-5 rounded-3xl border ${colorStyles.border} ${colorStyles.bg} flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 relative overflow-hidden`}>
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-surface-950 border border-white/10 flex items-center justify-center text-3xl shadow-glow">
+            {activeUser.avatar || '⚡'}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 rounded-md ${colorStyles.badge} text-[10px] font-bold uppercase tracking-wider`}>
+                {activeUser.role} Vault
+              </span>
+              <span className="text-xs font-mono text-slate-400">ID: {activeUser.id}</span>
+            </div>
+            <h3 className="text-xl font-black text-white mt-0.5 flex items-center gap-2">
+              <span>{activeUser.name}'s Workspace</span>
+              {activeUser.vaultPin && <Lock className="w-4 h-4 text-amber-400" />}
+            </h3>
+            <p className="text-xs text-slate-300">
+              Isolated downloads, bookmarks, and pairing keys in Turso LibSQL Cloud.
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <button
+            onClick={onOpenUserModal}
+            className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-surface-900 hover:bg-surface-800 text-white font-bold text-xs border border-white/10 transition-all flex items-center justify-center gap-1.5"
+          >
+            <Users className="w-4 h-4 text-cyan-400" />
+            <span>Manage Profiles</span>
+          </button>
+
           <button
             onClick={loadTursoData}
             disabled={loadingCloud}
-            className="px-3 py-2 rounded-xl bg-surface-900 hover:bg-surface-800 border border-white/10 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all"
-            title="Sync with Turso Cloud"
+            className="px-3.5 py-2 rounded-xl bg-surface-900 hover:bg-surface-800 border border-white/10 text-slate-300 text-xs font-bold flex items-center gap-1.5 transition-all"
+            title="Sync Cloud"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${loadingCloud ? 'animate-spin' : ''}`} />
-            <span>Sync Cloud</span>
+            <span>Sync</span>
           </button>
-
-          {itemsToDisplay.length > 0 && (
-            <button
-              onClick={() => {
-                if (window.confirm('Clear all your download history? Bookmarks will remain preserved.')) {
-                  clearHistory();
-                  onClearHistory();
-                  setCloudItems([]);
-                  showToast('History cleared', 'info');
-                }
-              }}
-              className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-1.5 transition-all"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Clear History</span>
-            </button>
-          )}
         </div>
       </div>
 
       {/* Cloud DB Metrics Banner */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         
-        <div className="glass-panel p-4 rounded-2xl border border-brand-500/30 flex items-center gap-4">
+        <div className="glass-panel p-4 rounded-2xl border border-white/5 flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-brand-500/20 text-cyan-400 flex items-center justify-center font-black">
-            <Database className="w-6 h-6" />
+            <Users className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Turso LibSQL Cloud</p>
-            <p className="text-lg font-black text-white font-mono flex items-center gap-1.5">
-              <span>Connected</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-            </p>
+            <p className="text-xs text-slate-400 font-medium">Active Profile</p>
+            <p className="text-base font-black text-white truncate max-w-[150px]">{activeUser.name}</p>
           </div>
         </div>
 
@@ -186,7 +223,7 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
             <Cloud className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Synced Downloads</p>
+            <p className="text-xs text-slate-400 font-medium">Downloads in Vault</p>
             <p className="text-lg font-black text-white font-mono">
               {cloudItems.length > 0 ? cloudItems.length : history.length} Items
             </p>
@@ -198,14 +235,14 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
             <Bookmark className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs text-slate-400 font-medium">Saved Bookmarks</p>
+            <p className="text-xs text-slate-400 font-medium">Permanent Bookmarks</p>
             <p className="text-lg font-black text-white font-mono">{bookmarks.length} Preserved</p>
           </div>
         </div>
 
       </div>
 
-      {/* Sub-Tabs: History, Bookmarks, 2:00 AM Maintenance */}
+      {/* Sub-Tabs: History, Bookmarks, Maintenance */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         
         <div className="flex items-center gap-2 bg-surface-900 p-1 rounded-xl border border-white/10 text-xs font-bold flex-wrap">
@@ -236,7 +273,7 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
             }`}
           >
             <Zap className="w-4 h-4 text-amber-300" />
-            <span>02:00 AM Auto-Prune Engine</span>
+            <span>02:00 AM Storage Pruner</span>
           </button>
         </div>
 
@@ -261,16 +298,16 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
 
       </div>
 
-      {/* TAB 1: HISTORY VIEW */}
+      {/* TAB 1: USER HISTORY VIEW */}
       {activeSubTab === 'history' && (
         filteredHistory.length === 0 ? (
           <div className="glass-panel p-12 rounded-3xl text-center space-y-3">
             <div className="w-16 h-16 rounded-2xl bg-surface-900 border border-white/10 text-slate-500 mx-auto flex items-center justify-center">
               <Cloud className="w-8 h-8 text-cyan-400" />
             </div>
-            <h3 className="text-base font-bold text-white">Your Cloud Download History is Clean</h3>
+            <h3 className="text-base font-bold text-white">No Downloads in {activeUser.name}'s Vault</h3>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              Any video or photo you download from Android PWA, Chrome Extension, or Desktop automatically appears here in real time.
+              Any media you download while active in this profile will be saved securely to this vault.
             </p>
           </div>
         ) : (
@@ -314,6 +351,22 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  
+                  {/* Transfer to another user */}
+                  {profiles.length > 1 && (
+                    <button
+                      onClick={() => {
+                        setTransferringItem(item);
+                        const otherProfile = profiles.find(p => p.id !== activeUser.id);
+                        if (otherProfile) setTargetUserId(otherProfile.id);
+                      }}
+                      className="p-2.5 rounded-xl bg-surface-900 hover:bg-surface-800 border border-white/10 text-slate-400 hover:text-cyan-300 transition-colors"
+                      title="Transfer to another user profile"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  )}
+
                   <button
                     onClick={() => handleBookmark(item)}
                     className="p-2.5 rounded-xl bg-surface-900 hover:bg-surface-800 border border-white/10 text-slate-400 hover:text-amber-300 transition-colors"
@@ -353,12 +406,64 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
         )
       )}
 
-      {/* TAB 2: BOOKMARKS VIEW */}
+      {/* Transfer Item Modal Overlay */}
+      {transferringItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="glass-panel w-full max-w-md rounded-3xl border border-cyan-500/40 p-6 space-y-4">
+            <h4 className="text-base font-black text-white flex items-center gap-2">
+              <Send className="w-5 h-5 text-cyan-400" />
+              <span>Transfer Media to Another Profile</span>
+            </h4>
+            <p className="text-xs text-slate-300">
+              Send <strong className="text-white">"{transferringItem.title}"</strong> directly to another user's vault.
+            </p>
+
+            <form onSubmit={handleExecuteTransfer} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">Select Target User Profile</label>
+                <select
+                  value={targetUserId}
+                  onChange={(e) => setTargetUserId(e.target.value)}
+                  className="w-full bg-surface-900 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-cyan-400"
+                  required
+                >
+                  {profiles
+                    .filter(p => p.id !== activeUser.id)
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.avatar} {p.name} ({p.role})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setTransferringItem(null)}
+                  className="px-4 py-2 rounded-xl bg-surface-900 text-slate-300 hover:text-white text-xs font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-surface-950 text-xs font-black flex items-center gap-1.5 shadow-glow"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send to Profile</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: USER BOOKMARKS VIEW */}
       {activeSubTab === 'bookmarks' && (
         bookmarks.length === 0 ? (
           <div className="glass-panel p-12 rounded-3xl text-center space-y-3">
             <Bookmark className="w-12 h-12 text-amber-400 mx-auto" />
-            <h3 className="text-base font-bold text-white">No Cloud Bookmarks Saved Yet</h3>
+            <h3 className="text-base font-bold text-white">No Cloud Bookmarks in {activeUser.name}'s Vault</h3>
             <p className="text-xs text-slate-400 max-w-sm mx-auto">
               Bookmarks are <strong className="text-emerald-300">PRESERVED FOREVER</strong> across 2:00 AM cleanups. Click the bookmark icon next to any media to save it permanently.
             </p>
@@ -367,7 +472,7 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
           <div className="space-y-3">
             <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-amber-400 flex-shrink-0" />
-              <span>Bookmarks are excluded from the 2:00 AM cleanup and will never be deleted automatically.</span>
+              <span>Bookmarks in {activeUser.name}'s vault are excluded from the 2:00 AM cleanup and never deleted.</span>
             </div>
 
             {bookmarks.map((bm) => (
@@ -396,7 +501,7 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
 
                   <button
                     onClick={async () => {
-                      await deleteTursoBookmark(bm.id);
+                      await deleteTursoBookmark(bm.id, activeUser.id);
                       setBookmarks(prev => prev.filter(b => b.id !== bm.id));
                       showToast('Bookmark deleted', 'info');
                     }}
@@ -418,13 +523,13 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20 text-xs font-bold mb-2">
                 <Calendar className="w-3.5 h-3.5 text-amber-400" />
-                <span>Automated Storage Saver & Free-Tier Protector</span>
+                <span>Automated Multi-Tenant Storage Saver</span>
               </div>
               <h3 className="text-xl font-black text-white">
-                02:00 AM Midnight Storage Auto-Pruning
+                02:00 AM Midnight Multi-User Auto-Prune
               </h3>
               <p className="text-xs text-slate-400 mt-0.5 max-w-xl">
-                Wipes old download stream logs at 2:00 AM daily to prevent Turso storage bloat, while keeping all your Bookmarks and Preferences preserved forever.
+                Wipes old download stream logs at 2:00 AM daily across all user accounts to save storage, while keeping all User Profiles, Vault PINs, Bookmarks, and Settings preserved forever.
               </p>
             </div>
 
@@ -457,8 +562,10 @@ export default function HistoryQueue({ history, onClearHistory, showToast, onSel
                 <span>PRESERVED FOREVER (Never Deleted):</span>
               </p>
               <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+                <li><strong className="text-white">All User Profiles</strong> (`user_profiles`)</li>
+                <li><strong className="text-white">User Vaults & PINs</strong> (`user_vaults`)</li>
                 <li><strong className="text-white">Saved Bookmarks</strong> (`saved_bookmarks`)</li>
-                <li><strong className="text-white">Settings & Custom Preferences</strong> (`user_settings`)</li>
+                <li><strong className="text-white">Custom Settings</strong> (`user_settings`)</li>
               </ul>
             </div>
 

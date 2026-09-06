@@ -164,6 +164,39 @@ def health_check():
 
 # --- TURSO CLOUD DATABASE & USER PRIVACY ISOLATION ENDPOINTS ---
 
+@app.get("/api/turso/profiles")
+def get_turso_profiles():
+    try:
+        return {"success": True, "profiles": turso.get_cloud_profiles()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Profiles Error: {str(e)}")
+
+@app.post("/api/turso/profiles")
+def sync_turso_profile(profile: Dict[str, Any]):
+    try:
+        res = turso.sync_cloud_profile(profile)
+        return {"success": True, "profile": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Profile Sync Error: {str(e)}")
+
+@app.delete("/api/turso/profiles/{profile_id}")
+def delete_turso_profile(profile_id: str):
+    try:
+        turso.delete_cloud_profile(profile_id)
+        return {"success": True, "deleted": profile_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Profile Delete Error: {str(e)}")
+
+@app.post("/api/turso/transfer")
+def transfer_media_item(req: Dict[str, Any]):
+    try:
+        from_u = req.get("from_user_id", "usr_owner_01")
+        to_u = req.get("to_user_id", "usr_work_02")
+        res = turso.transfer_cloud_item(req, from_u, to_u)
+        return {"success": True, "transfer": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transfer Error: {str(e)}")
+
 @app.get("/api/turso/status")
 def get_turso_status():
     return turso.check_turso_health()

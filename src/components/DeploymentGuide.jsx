@@ -19,12 +19,15 @@ import {
   Lock,
   Layers,
   Sparkles,
-  Key
+  Key,
+  Users,
+  QrCode,
+  Send
 } from 'lucide-react';
 
 export default function DeploymentGuide({ showToast }) {
   const [copiedCode, setCopiedCode] = useState(null);
-  const [activeGuideTab, setActiveGuideTab] = useState('personal'); // 'personal', 'prune', 'hosting', 'api'
+  const [activeGuideTab, setActiveGuideTab] = useState('multiuser'); // 'multiuser', 'prune', 'hosting', 'api'
 
   const handleCopy = (id, text) => {
     navigator.clipboard.writeText(text);
@@ -42,14 +45,14 @@ export default function DeploymentGuide({ showToast }) {
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-xs font-bold font-mono">
-              <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Personal Private Cloud Architecture</span>
+              <Users className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Multi-User Cloud Architecture</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black text-white">
-              OmniGrab Pro Personal System & Operations Guide
+              OmniGrab Pro Multi-User System Handbook
             </h2>
             <p className="text-sm text-slate-300 max-w-2xl">
-              Complete technical handbook for your single-owner media downloader. Syncs across all your personal devices with zero clutter, direct Turso cloud persistence, and automated 02:00 AM midnight cleanup.
+              Engineered for seamless multi-tenant isolation, instant user profile switching, cross-profile media transfers, and automated 02:00 AM midnight cleanup.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -68,13 +71,13 @@ export default function DeploymentGuide({ showToast }) {
       {/* Guide Navigation Tabs */}
       <div className="flex items-center gap-2 bg-surface-900 p-1.5 rounded-2xl border border-white/10 overflow-x-auto text-xs font-bold">
         <button
-          onClick={() => setActiveGuideTab('personal')}
+          onClick={() => setActiveGuideTab('multiuser')}
           className={`px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeGuideTab === 'personal' ? 'bg-brand-600 text-white shadow-glow' : 'text-slate-400 hover:text-white'
+            activeGuideTab === 'multiuser' ? 'bg-brand-600 text-white shadow-glow' : 'text-slate-400 hover:text-white'
           }`}
         >
-          <Lock className="w-4 h-4 text-emerald-400" />
-          <span>100% Private Personal Setup</span>
+          <Users className="w-4 h-4 text-cyan-400" />
+          <span>Multi-User & Profile Vaults</span>
         </button>
 
         <button
@@ -93,7 +96,7 @@ export default function DeploymentGuide({ showToast }) {
             activeGuideTab === 'hosting' ? 'bg-brand-600 text-white shadow-glow' : 'text-slate-400 hover:text-white'
           }`}
         >
-          <Globe className="w-4 h-4 text-cyan-400" />
+          <Globe className="w-4 h-4 text-emerald-400" />
           <span>Hosting & Vercel Config</span>
         </button>
 
@@ -108,69 +111,55 @@ export default function DeploymentGuide({ showToast }) {
         </button>
       </div>
 
-      {/* TAB: 100% Private Personal Setup */}
-      {activeGuideTab === 'personal' && (
+      {/* TAB: Multi-User & Profile Vaults */}
+      {activeGuideTab === 'multiuser' && (
         <div className="space-y-6 animate-fadeIn">
-          <div className="glass-panel p-6 rounded-3xl border border-emerald-500/30 space-y-4">
+          <div className="glass-panel p-6 rounded-3xl border border-cyan-500/30 space-y-4">
             <h3 className="text-lg font-black text-white flex items-center gap-2">
-              <Lock className="w-5 h-5 text-emerald-400" />
-              <span>Dedicated Single-Owner Platform</span>
+              <ShieldCheck className="w-5 h-5 text-cyan-400" />
+              <span>Multi-Tenant Partitioned Architecture</span>
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              OmniGrab Pro is built for <strong className="text-white">your direct personal use</strong>. There are no public user accounts, no logins, no PINs, and no multi-tenant confusion. Your Turso LibSQL database stores your synced downloads and permanent bookmarks directly for you.
+              OmniGrab Pro provides true <strong className="text-white">Multi-User Isolation</strong>. Each user profile operates with its own cryptographically unique identity, isolated downloads history, private bookmarks, and optional PIN security.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
               <div className="p-4 rounded-2xl bg-surface-900 border border-white/5 space-y-2">
-                <Smartphone className="w-6 h-6 text-cyan-400" />
-                <h4 className="text-xs font-bold text-white">Android PWA</h4>
+                <Users className="w-6 h-6 text-cyan-400" />
+                <h4 className="text-xs font-bold text-white">Unlimited Profiles</h4>
                 <p className="text-[11px] text-slate-400">
-                  Tap "Share" on any YouTube, Instagram, or TikTok link on your phone → select OmniGrab Pro to extract in 1 tap.
+                  Create dedicated profiles for Personal, Work, Family members, or Teams with custom avatars and color accents.
                 </p>
               </div>
 
               <div className="p-4 rounded-2xl bg-surface-900 border border-white/5 space-y-2">
-                <Server className="w-6 h-6 text-brand-400" />
-                <h4 className="text-xs font-bold text-white">Chrome Extension</h4>
+                <Lock className="w-6 h-6 text-amber-400" />
+                <h4 className="text-xs font-bold text-white">PIN Protection</h4>
                 <p className="text-[11px] text-slate-400">
-                  Injects one-click download badges on video players and syncs downloads directly to your Turso cloud database.
+                  Set optional 4-digit PIN locks on private profiles to prevent other users on shared devices from accessing them.
                 </p>
               </div>
 
               <div className="p-4 rounded-2xl bg-surface-900 border border-white/5 space-y-2">
-                <Cloud className="w-6 h-6 text-emerald-400" />
-                <h4 className="text-xs font-bold text-white">Turso LibSQL Cloud</h4>
+                <Send className="w-6 h-6 text-emerald-400" />
+                <h4 className="text-xs font-bold text-white">Cross-User Transfers</h4>
                 <p className="text-[11px] text-slate-400">
-                  Located in AWS Mumbai (<code className="text-cyan-300 font-mono text-[10px]">ap-south-1</code>) for sub-10ms response times.
+                  Transfer any downloaded video or photo directly from your profile into another user's vault with 1 click.
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Chrome Extension Manual Install */}
+          {/* Device Linking & QR Scan */}
           <div className="glass-panel p-6 rounded-3xl border border-white/10 space-y-4">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Terminal className="w-5 h-5 text-cyan-400" />
-              <span>How to Install Companion Chrome Extension (30 Seconds)</span>
+              <QrCode className="w-5 h-5 text-cyan-400" />
+              <span>Instant Cross-Device Pairing</span>
             </h3>
             
-            <ol className="text-xs text-slate-300 space-y-3 list-decimal list-inside">
-              <li>
-                Download and extract the ZIP file: <a href="/OmniGrab_Chrome_Extension_V3.zip" download="OmniGrab_Chrome_Extension_V3.zip" className="text-cyan-400 font-bold underline">OmniGrab_Chrome_Extension_V3.zip</a>.
-              </li>
-              <li>
-                In Google Chrome / Brave / Edge, open <code className="bg-surface-900 px-2 py-0.5 rounded text-cyan-300 font-mono">chrome://extensions/</code>.
-              </li>
-              <li>
-                Enable <strong className="text-white">Developer mode</strong> toggle in the top-right corner.
-              </li>
-              <li>
-                Click <strong className="text-white">Load unpacked</strong> and select the extracted extension folder.
-              </li>
-              <li>
-                The OmniGrab Pro badge will now appear on all media websites with 1-click download actions!
-              </li>
-            </ol>
+            <p className="text-xs text-slate-300">
+              Each user profile generates a scannable QR code and Pairing ID. Scanning the QR code with your phone camera or entering the ID in the Chrome Extension links that device directly into that user profile.
+            </p>
           </div>
         </div>
       )}
@@ -184,10 +173,10 @@ export default function DeploymentGuide({ showToast }) {
               <span>Turso Free-Tier Zero Maintenance</span>
             </div>
             <h3 className="text-xl font-black text-white">
-              02:00 AM Automated Pruning Architecture
+              02:00 AM Multi-User Storage Pruning
             </h3>
             <p className="text-xs text-slate-300 leading-relaxed">
-              To keep your Turso Cloud database well within the free tier forever without manual upkeep, OmniGrab Pro executes an automated cleanup cron job at <strong className="text-amber-300">02:00 AM daily</strong>.
+              To keep your Turso Cloud database well within the free tier forever without manual upkeep, OmniGrab Pro executes an automated cleanup cron job at <strong className="text-amber-300">02:00 AM daily</strong> across all user profiles.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -206,8 +195,10 @@ export default function DeploymentGuide({ showToast }) {
                   <span>🛡️ Permanent Data (Preserved Forever)</span>
                 </h4>
                 <ul className="text-xs text-slate-400 space-y-1 list-disc list-inside">
+                  <li>All User Profiles (`user_profiles`)</li>
+                  <li>User Vaults & PINs (`user_vaults`)</li>
                   <li>Saved Bookmarks (`saved_bookmarks`)</li>
-                  <li>User settings & custom defaults (`user_settings`)</li>
+                  <li>User Settings (`user_settings`)</li>
                 </ul>
               </div>
             </div>
@@ -264,43 +255,43 @@ TURSO_AUTH_TOKEN=eyJhbGciOiJFZERTQ...`}
           <div className="glass-panel p-6 rounded-3xl border border-purple-500/30 space-y-4">
             <h3 className="text-lg font-black text-white flex items-center gap-2">
               <Code2 className="w-5 h-5 text-purple-400" />
-              <span>Unified Backend Endpoints</span>
+              <span>Multi-User API Endpoints</span>
             </h3>
             
             <div className="space-y-3 font-mono text-xs">
               <div className="p-3 rounded-xl bg-surface-900 border border-white/5 flex items-center justify-between">
                 <div>
-                  <span className="text-emerald-400 font-bold">POST</span> <span className="text-white">/api/extract</span>
+                  <span className="text-cyan-400 font-bold">GET/POST</span> <span className="text-white">/api/turso/profiles</span>
                 </div>
-                <span className="text-slate-400 text-[11px]">Extract video/photo formats</span>
+                <span className="text-slate-400 text-[11px]">Manage user profiles & roles</span>
               </div>
 
               <div className="p-3 rounded-xl bg-surface-900 border border-white/5 flex items-center justify-between">
                 <div>
-                  <span className="text-cyan-400 font-bold">GET</span> <span className="text-white">/api/turso/history</span>
+                  <span className="text-emerald-400 font-bold">POST</span> <span className="text-white">/api/turso/transfer</span>
                 </div>
-                <span className="text-slate-400 text-[11px]">Fetch cloud download items</span>
+                <span className="text-slate-400 text-[11px]">Cross-profile media transfer</span>
               </div>
 
               <div className="p-3 rounded-xl bg-surface-900 border border-white/5 flex items-center justify-between">
                 <div>
-                  <span className="text-emerald-400 font-bold">POST</span> <span className="text-white">/api/turso/history</span>
+                  <span className="text-cyan-400 font-bold">GET/POST</span> <span className="text-white">/api/turso/history</span>
                 </div>
-                <span className="text-slate-400 text-[11px]">Log new completed download</span>
+                <span className="text-slate-400 text-[11px]">User-scoped download history</span>
               </div>
 
               <div className="p-3 rounded-xl bg-surface-900 border border-white/5 flex items-center justify-between">
                 <div>
                   <span className="text-amber-400 font-bold">GET/POST</span> <span className="text-white">/api/turso/bookmarks</span>
                 </div>
-                <span className="text-slate-400 text-[11px]">Manage permanent bookmarks</span>
+                <span className="text-slate-400 text-[11px]">User-scoped saved bookmarks</span>
               </div>
 
               <div className="p-3 rounded-xl bg-surface-900 border border-white/5 flex items-center justify-between">
                 <div>
                   <span className="text-rose-400 font-bold">POST</span> <span className="text-white">/api/cron/midnight-prune</span>
                 </div>
-                <span className="text-slate-400 text-[11px]">02:00 AM storage saver trigger</span>
+                <span className="text-slate-400 text-[11px]">02:00 AM multi-user storage cleanup</span>
               </div>
             </div>
           </div>

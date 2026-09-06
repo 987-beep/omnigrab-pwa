@@ -10,7 +10,13 @@ import MediaLightbox from './components/MediaLightbox';
 import Toast from './components/Toast';
 import CompanionSetupModal from './components/CompanionSetupModal';
 import CompanionBanner from './components/CompanionBanner';
+import UserProfileModal from './components/UserProfileModal';
 import { checkBackendHealth, getHistory } from './utils/api';
+import { 
+  getActiveUserProfile, 
+  setActiveUserProfile, 
+  getLocalProfiles 
+} from './utils/userManagement';
 import { 
   Download, 
   Smartphone, 
@@ -22,7 +28,8 @@ import {
   Share2,
   ShieldCheck,
   Zap,
-  Globe
+  Globe,
+  Users
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -35,17 +42,32 @@ export default function App() {
   const [lightboxData, setLightboxData] = useState(null);
   const [initialUrl, setInitialUrl] = useState('');
   
+  // Multi-User Modal State
+  const [isUserModalOpen, setIsUserModalOpen] = useState(false);
+  const [activeUser, setActiveUser] = useState(getActiveUserProfile());
+
   // Companion Extension Pairing State
   const [isExtensionLinked, setIsExtensionLinked] = useState(() => {
     return localStorage.getItem('omnigrab_extension_paired') === 'true';
   });
   const [isCompanionModalOpen, setIsCompanionModalOpen] = useState(false);
 
-  // Handle URL query parameters (Android Share Target or Chrome Extension redirects)
+  // Handle URL query parameters (Android Share Target, User Profile QR Scan, or Chrome Extension redirects)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sharedUrl = params.get('url') || params.get('text');
     const tabParam = params.get('tab');
+    const targetUserId = params.get('user_id');
+
+    if (targetUserId) {
+      const profiles = getLocalProfiles();
+      const matched = profiles.find(p => p.id === targetUserId);
+      if (matched) {
+        setActiveUserProfile(matched.id);
+        setActiveUser(matched);
+        showToast(`Switched into ${matched.name}'s profile from QR Link!`, 'success');
+      }
+    }
 
     if (tabParam) {
       if (['extract', 'scraper', 'extension', 'android', 'history', 'deploy'].includes(tabParam)) {
@@ -54,7 +76,6 @@ export default function App() {
     }
 
     if (sharedUrl) {
-      // Clean up text if it contains extra message words (e.g., from WhatsApp / YouTube share)
       const urlMatch = sharedUrl.match(/(https?:\/\/[^\s]+)/g);
       const cleanUrl = urlMatch ? urlMatch[0] : sharedUrl;
       setInitialUrl(cleanUrl);
@@ -83,7 +104,6 @@ export default function App() {
     const handleAppInstalled = () => {
       showToast('🎉 OmniGrab PWA Installed! Please link your Chrome Companion Extension.', 'success');
       confetti({ particleCount: 80, spread: 80 });
-      // Open companion setup modal to complete dual setup
       setTimeout(() => {
         setIsCompanionModalOpen(true);
       }, 1000);
@@ -97,11 +117,16 @@ export default function App() {
       }
     };
 
+    const handleUserChange = () => {
+      setActiveUser(getActiveUserProfile());
+      setHistory(getHistory());
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
     window.addEventListener('message', handleMessage);
+    window.addEventListener('omnigrab-user-changed', handleUserChange);
 
-    // Initial DOM attribute check for extension
     if (document.documentElement.getAttribute('data-omnigrab-extension-active') === 'true') {
       setIsExtensionLinked(true);
       localStorage.setItem('omnigrab_extension_paired', 'true');
@@ -111,12 +136,12 @@ export default function App() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
       window.removeEventListener('message', handleMessage);
+      window.removeEventListener('omnigrab-user-changed', handleUserChange);
     };
   }, []);
 
   const triggerInstall = async () => {
     if (!installPrompt) {
-      // If installPrompt isn't available (already standalone or manual install), prompt companion setup
       setIsCompanionModalOpen(true);
       return;
     }
@@ -173,6 +198,7 @@ export default function App() {
         triggerInstall={triggerInstall}
         isExtensionLinked={isExtensionLinked}
         onOpenCompanionModal={() => setIsCompanionModalOpen(true)}
+        onOpenUserModal={() => setIsUserModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -228,6 +254,7 @@ export default function App() {
             onClearHistory={() => setHistory([])}
             showToast={showToast}
             onSelectUrl={handleSelectUrlFromHistory}
+            onOpenUserModal={() => setIsUserModalOpen(true)}
           />
         )}
 
@@ -246,7 +273,7 @@ export default function App() {
             { id: 'scraper', label: 'Scrape', icon: Layers },
             { id: 'extension', label: 'Extension', icon: Puzzle },
             { id: 'android', label: 'Android', icon: Smartphone },
-            { id: 'history', label: 'History', icon: Sparkles },
+            { id: 'history', label: 'Vault', icon: Sparkles },
           ].map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -271,10 +298,14 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-white">OMNIGRAB PRO</span>
-            <span>• Universal Video & Photo Engine</span>
+            <span>• Multi-User Universal Cloud Engine</span>
           </div>
 
           <div className="flex items-center gap-4">
+            <button onClick={() => setIsUserModalOpen(true)} className="hover:text-cyan-300 transition-colors flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Profiles & Vaults</span>
+            </button>
             <button onClick={() => setIsCompanionModalOpen(true)} className="hover:text-cyan-300 transition-colors flex items-center gap-1">
               <Puzzle className="w-3.5 h-3.5 text-brand-400" />
               <span>Companion Setup</span>
@@ -289,11 +320,19 @@ export default function App() {
             </button>
             <button onClick={() => setActiveTab('deploy')} className="hover:text-cyan-300 transition-colors flex items-center gap-1">
               <Globe className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Vercel / GitHub Docs</span>
+              <span>Docs & API</span>
             </button>
           </div>
         </div>
       </footer>
+
+      {/* Multi-User Profile Manager Modal */}
+      <UserProfileModal
+        isOpen={isUserModalOpen}
+        onClose={() => setIsUserModalOpen(false)}
+        showToast={showToast}
+        onUserSwitched={(newUser) => setActiveUser(newUser)}
+      />
 
       {/* Companion Extension Setup Modal */}
       <CompanionSetupModal

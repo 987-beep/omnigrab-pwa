@@ -1,23 +1,9 @@
-// API & Utilities Client for OmniGrab Pro with Cloud Sync & 02:00 AM Midnight Auto-Prune
+// Multi-User API & Utilities Client for OmniGrab Pro
+import { getActiveUserProfile } from './userManagement';
 
 const API_BASE = '';
 
-// --- DEVICE IDENTITY & CLOUD SYNC ---
-
-export function getOrCreateUserId() {
-  try {
-    let uid = localStorage.getItem('omnigrab_user_uuid');
-    if (!uid) {
-      const randomBytes = Array.from(crypto.getRandomValues(new Uint8Array(8)))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-      uid = `usr_${randomBytes}`;
-      localStorage.setItem('omnigrab_user_uuid', uid);
-    }
-    return uid;
-  } catch {
-    return 'usr_guest';
-  }
-}
+// --- DEVICE & USER IDENTITY ---
 
 export function getOrCreateDeviceId() {
   try {
@@ -36,17 +22,9 @@ export function getOrCreateDeviceId() {
   }
 }
 
-export function getUserVaultPin() {
-  return localStorage.getItem('omnigrab_vault_pin') || '';
-}
-
-export function setUserVaultIdentity(newUserId, newPin) {
-  if (newUserId) localStorage.setItem('omnigrab_user_uuid', newUserId);
-  if (newPin) localStorage.setItem('omnigrab_vault_pin', newPin);
-}
-
-function getAuthHeaders() {
-  const userId = getOrCreateUserId();
+function getAuthHeaders(overrideUserId = null) {
+  const activeUser = getActiveUserProfile();
+  const userId = overrideUserId || activeUser?.id || 'usr_owner_01';
   const deviceId = getOrCreateDeviceId();
   return {
     'Content-Type': 'application/json',
@@ -69,7 +47,8 @@ export async function checkBackendHealth() {
   }
 }
 
-// TURSO CLOUD DATABASE API CALLS WITH ZERO-LEAKAGE USER ISOLATION
+// TURSO CLOUD DATABASE API CALLS WITH MULTI-USER TENANT ISOLATION
+
 export async function fetchTursoStatus() {
   try {
     const res = await fetch(`${API_BASE}/api/turso/status`, {
@@ -82,11 +61,41 @@ export async function fetchTursoStatus() {
   }
 }
 
-export async function fetchTursoHistory() {
+export async function fetchTursoProfiles() {
   try {
-    const userId = getOrCreateUserId();
-    const res = await fetch(`${API_BASE}/api/turso/history?user_id=${encodeURIComponent(userId)}`, {
+    const res = await fetch(`${API_BASE}/api/turso/profiles`, {
       headers: getAuthHeaders()
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.profiles || [];
+    }
+    return [];
+  } catch (e) {
+    console.error('Turso profiles fetch error:', e);
+    return [];
+  }
+}
+
+export async function syncUserProfileToTurso(profile) {
+  try {
+    const res = await fetch(`${API_BASE}/api/turso/profiles`, {
+      method: 'POST',
+      headers: getAuthHeaders(profile.id),
+      body: JSON.stringify(profile)
+    });
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.error('Turso profile sync note:', e);
+  }
+}
+
+export async function fetchTursoHistory(targetUserId = null) {
+  try {
+    const activeUser = getActiveUserProfile();
+    const userId = targetUserId || activeUser?.id || 'usr_owner_01';
+    const res = await fetch(`${API_BASE}/api/turso/history?user_id=${encodeURIComponent(userId)}`, {
+      headers: getAuthHeaders(userId)
     });
     if (res.ok) {
       const data = await res.json();
@@ -99,18 +108,20 @@ export async function fetchTursoHistory() {
   }
 }
 
-export async function syncDownloadToTurso(item) {
+export async function syncDownloadToTurso(item, targetUserId = null) {
   try {
-    const userId = getOrCreateUserId();
+    const activeUser = getActiveUserProfile();
+    const userId = targetUserId || activeUser?.id || 'usr_owner_01';
     const deviceId = getOrCreateDeviceId();
     const payload = {
+      id: item.id || `hist_${Date.now()}`,
       url: item.url,
       title: item.title,
       thumbnail: item.thumbnail,
       platform: item.platform || 'Web',
       quality: item.quality || 'HD',
-      media_type: item.type || 'video',
-      filesize: item.size || 'Unknown',
+      media_type: item.type || item.media_type || 'video',
+      filesize: item.size || item.filesize || 'Unknown',
       device_source: navigator.userAgent.includes('Android') ? 'Android PWA' : 'Desktop Web',
       user_id: userId,
       device_id: deviceId
@@ -118,7 +129,7 @@ export async function syncDownloadToTurso(item) {
 
     const res = await fetch(`${API_BASE}/api/turso/history`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders(userId),
       body: JSON.stringify(payload)
     });
 
@@ -128,23 +139,25 @@ export async function syncDownloadToTurso(item) {
   }
 }
 
-export async function deleteTursoHistory(id) {
+export async function deleteTursoHistory(id, targetUserId = null) {
   try {
-    const userId = getOrCreateUserId();
+    const activeUser = getActiveUserProfile();
+    const userId = targetUserId || activeUser?.id || 'usr_owner_01';
     await fetch(`${API_BASE}/api/turso/history/${id}?user_id=${encodeURIComponent(userId)}`, { 
       method: 'DELETE',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(userId)
     });
   } catch (e) {
     console.error('Turso delete note:', e);
   }
 }
 
-export async function fetchTursoBookmarks() {
+export async function fetchTursoBookmarks(targetUserId = null) {
   try {
-    const userId = getOrCreateUserId();
+    const activeUser = getActiveUserProfile();
+    const userId = targetUserId || activeUser?.id || 'usr_owner_01';
     const res = await fetch(`${API_BASE}/api/turso/bookmarks?user_id=${encodeURIComponent(userId)}`, {
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(userId)
     });
     if (res.ok) {
       const data = await res.json();
@@ -156,13 +169,14 @@ export async function fetchTursoBookmarks() {
   }
 }
 
-export async function addTursoBookmark(item) {
+export async function addTursoBookmark(item, targetUserId = null) {
   try {
-    const userId = getOrCreateUserId();
+    const activeUser = getActiveUserProfile();
+    const userId = targetUserId || activeUser?.id || 'usr_owner_01';
     const payload = { ...item, user_id: userId };
     const res = await fetch(`${API_BASE}/api/turso/bookmarks`, {
       method: 'POST',
-      headers: getAuthHeaders(),
+      headers: getAuthHeaders(userId),
       body: JSON.stringify(payload)
     });
     return await res.json();
@@ -171,40 +185,37 @@ export async function addTursoBookmark(item) {
   }
 }
 
-export async function deleteTursoBookmark(id) {
+export async function deleteTursoBookmark(id, targetUserId = null) {
   try {
-    const userId = getOrCreateUserId();
+    const activeUser = getActiveUserProfile();
+    const userId = targetUserId || activeUser?.id || 'usr_owner_01';
     await fetch(`${API_BASE}/api/turso/bookmarks/${id}?user_id=${encodeURIComponent(userId)}`, { 
       method: 'DELETE',
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(userId)
     });
   } catch (e) {
     console.error('Turso bookmark delete note:', e);
   }
 }
 
-export async function syncPrivateVault(vaultPin) {
+export async function transferItemToUser(item, targetUserId) {
   try {
-    const userId = getOrCreateUserId();
-    const deviceId = getOrCreateDeviceId();
-    const res = await fetch(`${API_BASE}/api/turso/vault/sync`, {
+    const activeUser = getActiveUserProfile();
+    const res = await fetch(`${API_BASE}/api/turso/transfer`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({
-        user_id: userId,
-        vault_pin: vaultPin,
-        device_id: deviceId
+        from_user_id: activeUser.id,
+        to_user_id: targetUserId,
+        url: item.url,
+        title: item.title,
+        thumbnail: item.thumbnail,
+        platform: item.platform || 'Web'
       })
     });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.vault?.vault_pin) {
-        setUserVaultIdentity(userId, data.vault.vault_pin);
-      }
-      return data;
-    }
+    return await res.json();
   } catch (e) {
-    console.error('Vault sync error:', e);
+    console.error('Transfer note:', e);
   }
 }
 
@@ -390,30 +401,35 @@ export function sendLocalNotification(title, body) {
   }
 }
 
-const HISTORY_KEY = 'omnigrab_download_history_v2';
+const HISTORY_KEY_PREFIX = 'omnigrab_hist_';
 
-export function getHistory() {
+export function getHistory(userId = null) {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const activeUser = getActiveUserProfile();
+    const uid = userId || activeUser?.id || 'usr_owner_01';
+    const raw = localStorage.getItem(`${HISTORY_KEY_PREFIX}${uid}`);
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
-export function saveHistoryItem(item) {
+export function saveHistoryItem(item, userId = null) {
   try {
-    const history = getHistory();
+    const activeUser = getActiveUserProfile();
+    const uid = userId || activeUser?.id || 'usr_owner_01';
+    const history = getHistory(uid);
     const newItem = {
       id: String(Date.now()),
       timestamp: new Date().toISOString(),
+      user_id: uid,
       ...item
     };
     const updated = [newItem, ...history.filter(h => h.url !== item.url || h.title !== item.title)].slice(0, 100);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+    localStorage.setItem(`${HISTORY_KEY_PREFIX}${uid}`, JSON.stringify(updated));
 
-    // Automatically sync to Turso Cloud DB with User ID isolation in background
-    syncDownloadToTurso(newItem);
+    // Sync to Turso Cloud DB under this user's isolated partition
+    syncDownloadToTurso(newItem, uid);
 
     return updated;
   } catch (e) {
@@ -422,7 +438,9 @@ export function saveHistoryItem(item) {
   }
 }
 
-export function clearHistory() {
-  localStorage.removeItem(HISTORY_KEY);
-  deleteTursoHistory('all');
+export function clearHistory(userId = null) {
+  const activeUser = getActiveUserProfile();
+  const uid = userId || activeUser?.id || 'usr_owner_01';
+  localStorage.removeItem(`${HISTORY_KEY_PREFIX}${uid}`);
+  deleteTursoHistory('all', uid);
 }

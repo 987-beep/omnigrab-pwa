@@ -74,9 +74,9 @@ def check_turso_health() -> Dict[str, Any]:
             "latency_ms": res.get("latency_ms"),
             "server_time": res["rows"][0].get("server_time") if res.get("rows") else None,
             "security": {
-                "isolation": "Personal Private Storage Architecture",
+                "isolation": "Multi-User Tenant Vault Architecture",
                 "auto_prune": "Daily at 02:00 AM (Downloads Only)",
-                "preserved_data": "Bookmarks & Settings"
+                "preserved_data": "User Profiles, Bookmarks & Vault PINs"
             },
             "last_maintenance": maintenance
         }
@@ -86,27 +86,64 @@ def check_turso_health() -> Dict[str, Any]:
             "error": str(e)
         }
 
-# --- CLOUD HISTORY & BOOKMARKS REPOSITORY ---
+# --- MULTI-USER PROFILES & VAULTS ---
+
+def get_cloud_profiles() -> List[Dict[str, Any]]:
+    sql = "SELECT * FROM user_profiles ORDER BY created_at ASC"
+    res = execute_query(sql)
+    return res.get("rows", [])
+
+def sync_cloud_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    p_id = profile.get("id") or f"usr_{uuid.uuid4().hex[:8]}"
+    sql = """
+    INSERT INTO user_profiles (id, name, avatar, color, role, vault_pin, last_active)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET 
+      name=excluded.name, 
+      avatar=excluded.avatar, 
+      color=excluded.color, 
+      role=excluded.role, 
+      vault_pin=excluded.vault_pin, 
+      last_active=CURRENT_TIMESTAMP
+    """
+    args = [
+        p_id,
+        profile.get("name", "User Profile"),
+        profile.get("avatar", "⚡"),
+        profile.get("color", "cyan"),
+        profile.get("role", "Member"),
+        profile.get("vaultPin") or profile.get("vault_pin") or ""
+    ]
+    execute_query(sql, args)
+    return {"id": p_id, "success": True}
+
+def delete_cloud_profile(profile_id: str) -> bool:
+    execute_query("DELETE FROM user_profiles WHERE id = ?", [profile_id])
+    execute_query("DELETE FROM downloads_history WHERE user_id = ?", [profile_id])
+    execute_query("DELETE FROM saved_bookmarks WHERE user_id = ?", [profile_id])
+    return True
+
+# --- MULTI-USER CLOUD HISTORY & BOOKMARKS REPOSITORY ---
 
 def get_cloud_history(user_id: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     check_and_lazy_prune()
-    if not user_id or user_id in ["default_guest", "all", "owner", "usr_guest", ""]:
+    if not user_id or user_id == "all":
         sql = "SELECT * FROM downloads_history ORDER BY created_at DESC LIMIT ?"
         res = execute_query(sql, [limit])
     else:
         sql = """
         SELECT * FROM downloads_history 
-        WHERE user_id = ? OR user_id IS NULL OR user_id = 'default_guest'
+        WHERE user_id = ? 
         ORDER BY created_at DESC 
         LIMIT ?
         """
         res = execute_query(sql, [user_id, limit])
     return res.get("rows", [])
 
-def add_cloud_history(item: Dict[str, Any], user_id: str, device_id: str = "browser") -> Dict[str, Any]:
+def add_cloud_history(item: Dict[str, Any], user_id: str = "usr_owner_01", device_id: str = "browser") -> Dict[str, Any]:
     check_and_lazy_prune()
     if not user_id:
-        user_id = "default_guest"
+        user_id = "usr_owner_01"
     
     item_id = item.get("id") or str(uuid.uuid4())[:12]
     sql = """
@@ -129,31 +166,23 @@ def add_cloud_history(item: Dict[str, Any], user_id: str, device_id: str = "brow
     execute_query(sql, args)
     return {"id": item_id, "user_id": user_id, "success": True}
 
-def delete_cloud_history(item_id: str, user_id: str) -> bool:
-    if not user_id:
-        user_id = "default_guest"
-        
+def delete_cloud_history(item_id: str, user_id: str = "usr_owner_01") -> bool:
     if item_id == "all":
-        # Strictly deletes only records belonging to this specific user_id
         execute_query("DELETE FROM downloads_history WHERE user_id = ?;", [user_id])
     else:
-        # Strictly enforces user_id check so no user can delete another user's item
         execute_query("DELETE FROM downloads_history WHERE id = ? AND user_id = ?;", [item_id, user_id])
     return True
 
 def get_cloud_bookmarks(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
-    if not user_id or user_id in ["default_guest", "all", "owner", "usr_guest", ""]:
+    if not user_id or user_id == "all":
         sql = "SELECT * FROM saved_bookmarks ORDER BY created_at DESC"
         res = execute_query(sql)
     else:
-        sql = "SELECT * FROM saved_bookmarks WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC"
+        sql = "SELECT * FROM saved_bookmarks WHERE user_id = ? ORDER BY created_at DESC"
         res = execute_query(sql, [user_id])
     return res.get("rows", [])
 
-def add_cloud_bookmark(item: Dict[str, Any], user_id: str) -> Dict[str, Any]:
-    if not user_id:
-        user_id = "default_guest"
-        
+def add_cloud_bookmark(item: Dict[str, Any], user_id: str = "usr_owner_01") -> Dict[str, Any]:
     b_id = item.get("id") or str(uuid.uuid4())[:12]
     sql = """
     INSERT INTO saved_bookmarks (id, url, title, thumbnail, platform, notes, user_id)
@@ -171,44 +200,26 @@ def add_cloud_bookmark(item: Dict[str, Any], user_id: str) -> Dict[str, Any]:
     execute_query(sql, args)
     return {"id": b_id, "user_id": user_id, "success": True}
 
-def delete_cloud_bookmark(b_id: str, user_id: str) -> bool:
-    if not user_id:
-        user_id = "default_guest"
-        
+def delete_cloud_bookmark(b_id: str, user_id: str = "usr_owner_01") -> bool:
     execute_query("DELETE FROM saved_bookmarks WHERE id = ? AND user_id = ?;", [b_id, user_id])
     return True
 
-def sync_user_vault(user_id: str, vault_pin: Optional[str] = None, device_id: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Validates or registers a multi-device secure vault.
-    Allows user to sync Android + Chrome Extension + Desktop without exposing data to other users.
-    """
-    if not user_id:
-        user_id = f"usr_{uuid.uuid4().hex[:10]}"
-    
-    # Check if vault exists
-    check = execute_query("SELECT * FROM user_vaults WHERE user_id = ?", [user_id])
-    if check.get("rows"):
-        execute_query(
-            "UPDATE user_vaults SET last_active = CURRENT_TIMESTAMP, device_count = device_count + 1 WHERE user_id = ?",
-            [user_id]
-        )
-        return {
-            "user_id": user_id,
-            "status": "authenticated",
-            "vault_pin": check["rows"][0].get("vault_pin")
-        }
-    else:
-        pin = vault_pin or f"PIN-{str(uuid.uuid4().int)[:6]}"
-        execute_query(
-            "INSERT INTO user_vaults (user_id, vault_pin, device_count) VALUES (?, ?, 1)",
-            [user_id, pin]
-        )
-        return {
-            "user_id": user_id,
-            "status": "created",
-            "vault_pin": pin
-        }
+def transfer_cloud_item(item: Dict[str, Any], from_user: str, to_user: str) -> Dict[str, Any]:
+    t_id = f"tr_{uuid.uuid4().hex[:10]}"
+    execute_query(
+        "INSERT INTO shared_transfers (id, from_user_id, to_user_id, url, title, thumbnail, platform) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [t_id, from_user, to_user, item.get("url", ""), item.get("title", "Media"), item.get("thumbnail", ""), item.get("platform", "Web")]
+    )
+    add_cloud_history({
+        "url": item.get("url", ""),
+        "title": item.get("title", "Media"),
+        "thumbnail": item.get("thumbnail", ""),
+        "platform": item.get("platform", "Web"),
+        "quality": "HD",
+        "media_type": "video",
+        "device_source": f"Transferred from {from_user}"
+    }, user_id=to_user)
+    return {"success": True, "transfer_id": t_id}
 
 # --- MIDNIGHT 02:00 AM AUTO-PRUNE / STORAGE SAVER ENGINE ---
 
@@ -216,15 +227,10 @@ def auto_prune_midnight_storage(force: bool = False) -> Dict[str, Any]:
     """
     Auto-prune engine:
     - Runs at 02:00 AM daily
-    - Purges downloaded material & download logs (downloads_history)
-    - PRESERVES all user sections: saved_bookmarks, user_vaults, user_settings
+    - Purges downloaded material & download logs (downloads_history) across all users
+    - PRESERVES all user profiles, vaults, bookmarks, and settings
     """
     try:
-        # Count items before purge
-        count_res = execute_query("SELECT COUNT(*) as cnt FROM downloads_history")
-        total_downloads = count_res["rows"][0]["cnt"] if count_res.get("rows") else 0
-
-        # Purge download history records older than 24 hours or before 2:00 AM cutoff
         purge_query = "DELETE FROM downloads_history WHERE created_at <= datetime('now', '-1 day');"
         res = execute_query(purge_query)
         purged_count = res.get("affected_row_count", 0)
@@ -241,6 +247,7 @@ def auto_prune_midnight_storage(force: bool = False) -> Dict[str, Any]:
             "schedule": "02:00 AM Daily",
             "purged_download_records": purged_count,
             "preserved": [
+                "user_profiles (Never deleted)",
                 "saved_bookmarks (Never deleted)",
                 "user_vaults & device IDs (Never deleted)",
                 "user_settings (Never deleted)"
@@ -261,22 +268,17 @@ def get_maintenance_status() -> Dict[str, Any]:
 
 _last_lazy_check = 0
 def check_and_lazy_prune():
-    """
-    Runs lazy check every hour: if today's 02:00 AM has passed and no cleanup ran today, trigger prune!
-    """
     global _last_lazy_check
     now = time.time()
-    if now - _last_lazy_check < 3600:  # Check at most once per hour
+    if now - _last_lazy_check < 3600:
         return
     _last_lazy_check = now
     
     try:
         now_dt = datetime.now(timezone.utc)
-        # If UTC hour is >= 2, check if cleanup ran today
         res = execute_query("SELECT last_run FROM system_maintenance WHERE task_name = 'midnight_02am_prune'")
         if res.get("rows"):
             last_run_str = res["rows"][0].get("last_run", "")
-            # If last run was not today, run auto prune
             if last_run_str and last_run_str[:10] != now_dt.strftime("%Y-%m-%d") and now_dt.hour >= 2:
                 auto_prune_midnight_storage()
     except Exception:
