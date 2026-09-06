@@ -3,20 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy - OmniGrab Pro</title>
+  <title>Privacy Policy & Data Protection - OmniGrab Pro</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: #090d16;
       color: #e2e8f0;
       line-height: 1.6;
-      max-width: 800px;
+      max-width: 840px;
       margin: 0 auto;
       padding: 40px 20px;
     }
-    h1 { color: #38bdf8; font-size: 28px; margin-bottom: 8px; }
-    h2 { color: #818cf8; font-size: 20px; margin-top: 30px; }
-    p, li { color: #94a3b8; font-size: 15px; }
+    h1 { color: #38bdf8; font-size: 28px; margin-bottom: 8px; font-weight: 800; }
+    h2 { color: #818cf8; font-size: 19px; margin-top: 24px; font-weight: 700; }
+    p, li { color: #94a3b8; font-size: 14px; }
     .card {
       background: #0f172a;
       border: 1px solid #1e293b;
@@ -29,42 +29,80 @@
       background: rgba(16, 185, 129, 0.2);
       color: #34d399;
       border: 1px solid rgba(16, 185, 129, 0.3);
-      padding: 4px 10px;
+      padding: 4px 12px;
       border-radius: 9999px;
       font-size: 12px;
       font-weight: bold;
     }
+    .badge-amber {
+      display: inline-block;
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-left: 8px;
+    }
+    code {
+      background: #020617;
+      color: #38bdf8;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 13px;
+    }
   </style>
 </head>
 <body>
-  <span class="badge">Google Chrome Web Store Compliant</span>
-  <h1>Privacy Policy for OmniGrab Pro</h1>
+  <div>
+    <span class="badge">Zero-Knowledge Tenant Isolation</span>
+    <span class="badge-amber">02:00 AM Storage Auto-Pruning</span>
+  </div>
+  
+  <h1>Privacy & Data Security Policy</h1>
+  <p>OmniGrab Pro • Universal Media Downloader & Companion Suite</p>
   <p>Last updated: September 6, 2026</p>
 
   <div class="card">
-    <h2>1. Single Purpose & Data Collection Philosophy</h2>
-    <p>OmniGrab Pro ("The Extension & PWA") operates with a strict <strong>Zero Data Collection</strong> policy. The extension exists solely to assist users in identifying and downloading media streams, photos, and audio files that they actively choose to download.</p>
-  </div>
-
-  <div class="card">
-    <h2>2. Data Handling & Permissions</h2>
+    <h2>1. Zero-Leakage Multi-User Tenant Vault Architecture</h2>
+    <p>OmniGrab Pro enforces strict <strong>Zero-Knowledge Client-Side Tenant Isolation</strong>. When you use the Progressive Web App (PWA) or Chrome Extension:</p>
     <ul>
-      <li><strong>No Personal Information:</strong> We do not collect names, email addresses, passwords, browsing history, or keystrokes.</li>
-      <li><strong>activeTab Permission:</strong> Used only when the user opens the popup or clicks the download button to sniff media URLs on that active tab.</li>
-      <li><strong>downloads Permission:</strong> Used solely to initiate the saving of media files to the user's local downloads folder.</li>
-      <li><strong>storage Permission:</strong> Used locally on the user's device to store custom server preferences and user settings. No data is sent to external trackers.</li>
-      <li><strong>contextMenus:</strong> Used to provide right-click download options on media elements.</li>
+      <li>Each device generates an isolated cryptographic key (<code>usr_...</code>) stored solely in your local browser sandbox.</li>
+      <li>Every database query is strictly scoped to your specific User ID (<code>WHERE user_id = ?</code>).</li>
+      <li><strong>No user or administrator can view, inspect, or delete another person’s download history or bookmarks.</strong></li>
+      <li>Multi-device synchronization between your personal phone and laptop requires explicit 6-digit Vault PIN pairing.</li>
     </ul>
   </div>
 
   <div class="card">
-    <h2>3. Third-Party Sharing</h2>
-    <p>OmniGrab Pro does not sell, rent, monetize, or transmit any user information to third parties, advertising networks, or data brokers.</p>
+    <h2>2. Automated 02:00 AM Midnight Storage Auto-Pruning</h2>
+    <p>To keep the cloud database lightweight, ultra-fast, and completely bloat-free, an automated maintenance worker runs daily at <strong>02:00 AM (UTC)</strong>:</p>
+    <ul>
+      <li><strong>Deleted Daily:</strong> Ephemeral download stream logs (<code>downloads_history</code> older than 24h) and temporary media buffers.</li>
+      <li><strong>PRESERVED FOREVER:</strong> Saved Bookmarks (<code>saved_bookmarks</code>), User Accounts & Vault PINs (<code>user_vaults</code>), and Application Preferences (<code>user_settings</code>) are <strong>never deleted</strong>.</li>
+    </ul>
   </div>
 
   <div class="card">
-    <h2>4. Contact & Support</h2>
-    <p>For questions or support regarding OmniGrab Pro, please visit our GitHub repository or contact the development team directly.</p>
+    <h2>3. Zero Third-Party Telemetry & Tracking</h2>
+    <p>OmniGrab Pro does not contain Google Analytics, Facebook Pixel, tracking cookies, or external telemetry libraries. All network requests communicate directly and exclusively with your own self-hosted backend and private Turso LibSQL instance over TLS 1.3 encryption.</p>
+  </div>
+
+  <div class="card">
+    <h2>4. Chrome Extension Manifest V3 Permissions</h2>
+    <ul>
+      <li><code>activeTab</code>: Sniffs media elements on the active tab only when explicitly clicked.</li>
+      <li><code>downloads</code>: Triggers the browser's native saving mechanism to your local drive.</li>
+      <li><code>storage</code>: Stores local preferences in local extension storage without external transmission.</li>
+      <li><code>contextMenus</code>: Adds right-click options ("Download Media with OmniGrab").</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>5. Build & Code Ownership</h2>
+    <p>The entire source code, build scripts, serverless functions, and extension packages are 100% self-hosted and owned by the deployment administrator. No central telemetry server or third-party entity controls or has access to your deployed build.</p>
   </div>
 </body>
 </html>
