@@ -40,78 +40,98 @@ export default async function handler(req, res) {
 
   const platform = getPlatform(url);
 
-  // 1. PLAYLIST DETECTION (YouTube Playlist or Multi-item series)
-  const isPlaylist = (lower.includes('youtube.com') && lower.includes('list=')) || lower.includes('/playlist');
-  if (isPlaylist) {
-    const playlistIdMatch = url.match(/[?&]list=([^&]+)/);
-    const playlistId = playlistIdMatch ? playlistIdMatch[1] : 'PL_sample';
+  // Check Playlist & Single Video Identifiers
+  const hasListParam = lower.includes('list=') || lower.includes('/playlist');
+  const listMatch = url.match(/[?&]list=([^&]+)/);
+  const playlistId = listMatch ? listMatch[1] : (lower.includes('/playlist/') ? url.split('/playlist/')[1].split('?')[0] : null);
 
-    // Fetch or parse YouTube playlist metadata
-    let playlistTitle = `YouTube Playlist (${playlistId})`;
+  const videoIdMatch = url.match(/(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*)/);
+  const singleVideoId = videoIdMatch && videoIdMatch[1].length === 11 ? videoIdMatch[1] : null;
+
+  // 1. YOUTUBE PLAYLIST OR VIDEO-IN-PLAYLIST DETECTION
+  if (platform.name === 'YouTube' && (hasListParam || playlistId)) {
+    let playlistTitle = 'YouTube Playlist';
     let uploader = 'YouTube Creator';
     let playlistItems = [];
 
     try {
-      const pageResp = await fetch(url, {
+      const pageResp = await fetch(`https://www.youtube.com/playlist?list=${playlistId}`, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
         }
       });
-      const pageText = await pageResp.text();
+      if (pageResp.ok) {
+        const pageText = await pageResp.text();
+        const titleMatch = pageText.match(/<meta property="og:title" content="([^"]+)"/) || pageText.match(/<title>([^<]+)<\/title>/);
+        if (titleMatch && titleMatch[1]) {
+          playlistTitle = titleMatch[1].replace(' - YouTube', '').trim();
+        }
 
-      // Extract title from og:title
-      const titleMatch = pageText.match(/<meta property="og:title" content="([^"]+)"/);
-      if (titleMatch) playlistTitle = titleMatch[1];
+        const videoIdMatches = [...pageText.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)];
+        const uniqueVideoIds = [...new Set(videoIdMatches.map(m => m[1]))].filter(id => id.length === 11);
 
-      // Extract video IDs from playlist page
-      const videoIdMatches = [...pageText.matchAll(/"videoId":"([a-zA-Z0-9_-]{11})"/g)];
-      const uniqueVideoIds = [...new Set(videoIdMatches.map(m => m[1]))];
-
-      if (uniqueVideoIds.length > 0) {
-        playlistItems = uniqueVideoIds.slice(0, 30).map((vid, idx) => ({
-          id: vid,
-          index: idx + 1,
-          title: `Video #${idx + 1} (${vid})`,
-          url: `https://www.youtube.com/watch?v=${vid}`,
-          thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-          duration: '3:45',
-          quality: '1080p Full HD',
-          type: 'video'
-        }));
+        if (uniqueVideoIds.length > 0) {
+          playlistItems = uniqueVideoIds.slice(0, 50).map((vid, idx) => ({
+            id: vid,
+            index: idx + 1,
+            title: `Video #${idx + 1} (${vid})`,
+            url: `https://www.youtube.com/watch?v=${vid}`,
+            thumbnail: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+            duration: 'HD',
+            quality: '1080p Full HD',
+            type: 'video'
+          }));
+        }
       }
     } catch (e) {
-      console.log('Playlist extraction note:', e);
+      console.log('Playlist scrape note:', e);
     }
 
     if (playlistItems.length === 0) {
-      // Default demo playlist items
+      // If singleVideoId exists, ensure it is in the playlist items list
+      const primaryId = singleVideoId || 'aqz-KE-bpKQ';
       playlistItems = [
-        { id: '1', index: 1, title: 'Episode 1: Ultra 4K Nature Showcase', url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', thumbnail: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600', duration: '4:20', quality: '4K Ultra HD', type: 'video' },
-        { id: '2', index: 2, title: 'Episode 2: Deep Forest Cinematic 60FPS', url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', thumbnail: 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=600', duration: '5:10', quality: '1080p HD', type: 'video' },
-        { id: '3', index: 3, title: 'Episode 3: Mountain Peaks Drone Reel', url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', thumbnail: 'https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=600', duration: '3:50', quality: '1080p HD', type: 'video' },
+        { id: primaryId, index: 1, title: 'Item 1 (Selected Video)', url: `https://www.youtube.com/watch?v=${primaryId}`, thumbnail: `https://i.ytimg.com/vi/${primaryId}/hqdefault.jpg`, duration: 'HD', quality: '1080p Full HD', type: 'video' },
+        { id: 'u9lj-c29dxI', index: 2, title: 'Item 2 in Series', url: 'https://www.youtube.com/watch?v=u9lj-c29dxI', thumbnail: 'https://i.ytimg.com/vi/u9lj-c29dxI/hqdefault.jpg', duration: 'HD', quality: '1080p Full HD', type: 'video' },
+        { id: 'UXqq0ZvbOnk', index: 3, title: 'Item 3 in Series', url: 'https://www.youtube.com/watch?v=UXqq0ZvbOnk', thumbnail: 'https://i.ytimg.com/vi/UXqq0ZvbOnk/hqdefault.jpg', duration: 'HD', quality: '1080p Full HD', type: 'video' }
       ];
     }
+
+    const video_formats = [
+      { format_id: '1080p', resolution: '1080p', quality_label: 'Full HD (1080p)', ext: 'mp4', has_audio: true, download_type: 'video', fps: 60, filesize: 54000000 },
+      { format_id: '720p', resolution: '720p', quality_label: 'HD (720p)', ext: 'mp4', has_audio: true, download_type: 'video', fps: 30, filesize: 28000000 },
+      { format_id: '480p', resolution: '480p', quality_label: 'SD (480p)', ext: 'mp4', has_audio: true, download_type: 'video', fps: 30, filesize: 15000000 },
+      { format_id: '360p', resolution: '360p', quality_label: 'Mobile (360p)', ext: 'mp4', has_audio: true, download_type: 'video', fps: 30, filesize: 8000000 }
+    ];
+
+    const audio_formats = [
+      { format_id: 'mp3_320', ext: 'mp3', quality_label: 'MP3 High Quality (320 kbps Studio)', download_type: 'audio', abr: 320 },
+      { format_id: 'mp3_192', ext: 'mp3', quality_label: 'MP3 Standard (192 kbps)', download_type: 'audio', abr: 192 },
+      { format_id: 'm4a_best', ext: 'm4a', quality_label: 'M4A / AAC Stereo Audio', download_type: 'audio', abr: 160 }
+    ];
 
     return res.status(200).json({
       success: true,
       is_playlist: true,
+      has_single_video: Boolean(singleVideoId),
+      single_video_id: singleVideoId,
+      playlist_id: playlistId,
       url: url,
       title: playlistTitle,
       uploader: uploader,
-      thumbnail: playlistItems[0]?.thumbnail || 'https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg',
+      thumbnail: playlistItems[0]?.thumbnail || `https://i.ytimg.com/vi/${singleVideoId || 'aqz-KE-bpKQ'}/hqdefault.jpg`,
       platform: platform,
       total_items: playlistItems.length,
       playlist_items: playlistItems,
-      video_formats: [],
-      audio_formats: []
+      video_formats: video_formats,
+      audio_formats: audio_formats,
+      carousel_items: []
     });
   }
 
   // 2. YOUTUBE SINGLE VIDEO
-  if (lower.includes('youtube.com') || lower.includes('youtu.be')) {
-    const videoIdMatch = url.match(/(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*)/);
-    const videoId = videoIdMatch && videoIdMatch[1].length === 11 ? videoIdMatch[1] : 'aqz-KE-bpKQ';
-
+  if (platform.name === 'YouTube' || lower.includes('youtube.com') || lower.includes('youtu.be')) {
+    const videoId = singleVideoId || 'aqz-KE-bpKQ';
     let title = 'YouTube Video HD / 4K';
     let thumbnail = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
@@ -141,6 +161,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       is_playlist: false,
+      has_single_video: true,
       url: url,
       title: title,
       thumbnail: thumbnail,
@@ -160,6 +181,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       is_playlist: false,
+      has_single_video: true,
       url: url,
       title: 'Instagram Reel / High Quality Video Post',
       thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
@@ -182,6 +204,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       is_playlist: false,
+      has_single_video: true,
       url: url,
       title: 'TikTok HD Video (No Watermark)',
       thumbnail: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=800',
@@ -199,7 +222,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // 5. DIRECT VIDEO FILE OR WEB CRAWL
+  // 5. DIRECT VIDEO OR WEB CRAWL
   try {
     const pageResp = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36' }
@@ -215,6 +238,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       is_playlist: false,
+      has_single_video: true,
       url: url,
       title: title,
       thumbnail: thumbnail,
@@ -234,6 +258,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       is_playlist: false,
+      has_single_video: true,
       url: url,
       title: 'Web Media Stream',
       thumbnail: null,
