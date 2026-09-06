@@ -54,22 +54,21 @@ export default async function handler(req, res) {
         provider: 'Turso LibSQL Cloud (AWS ap-south-1)',
         server_time: dbRes.rows[0]?.server_time,
         security: {
-          isolation: 'Zero-Knowledge Multi-User Tenant Vaults',
+          isolation: 'Personal Private Cloud Storage Architecture',
           midnight_cleanup: '02:00 AM UTC (Purges downloads, preserves user & bookmarks)'
         }
       });
     }
 
-    // 1. ISOLATED USER HISTORY
+    // 1. CLOUD HISTORY
     if (action === 'history') {
       if (req.method === 'GET') {
         const limit = parseInt(req.query.limit || '50', 10);
-        // Strictly isolated: query only for this user_id
         const dbRes = await executeTurso(
-          "SELECT * FROM downloads_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?;",
-          [userId, limit]
+          "SELECT * FROM downloads_history ORDER BY created_at DESC LIMIT ?;",
+          [limit]
         );
-        return res.status(200).json({ success: true, user_id: userId, history: dbRes.rows });
+        return res.status(200).json({ success: true, history: dbRes.rows });
       }
 
       if (req.method === 'POST') {
@@ -91,30 +90,27 @@ export default async function handler(req, res) {
             deviceId
           ]
         );
-        return res.status(200).json({ success: true, id: itemId, user_id: userId });
+        return res.status(200).json({ success: true, id: itemId });
       }
 
       if (req.method === 'DELETE') {
         const itemId = req.query.id;
         if (itemId && itemId !== 'all') {
-          // Strictly delete only if id matches AND user_id matches
-          await executeTurso("DELETE FROM downloads_history WHERE id = ? AND user_id = ?;", [itemId, userId]);
+          await executeTurso("DELETE FROM downloads_history WHERE id = ?;", [itemId]);
         } else {
-          // Clears only this user's history
-          await executeTurso("DELETE FROM downloads_history WHERE user_id = ?;", [userId]);
+          await executeTurso("DELETE FROM downloads_history;");
         }
-        return res.status(200).json({ success: true, message: 'User history cleared', user_id: userId });
+        return res.status(200).json({ success: true, message: 'History cleared' });
       }
     }
 
-    // 2. ISOLATED USER BOOKMARKS (PRESERVED ACROSS CLEANUPS)
+    // 2. SAVED BOOKMARKS (PRESERVED ACROSS CLEANUPS)
     if (action === 'bookmarks') {
       if (req.method === 'GET') {
         const dbRes = await executeTurso(
-          "SELECT * FROM saved_bookmarks WHERE user_id = ? ORDER BY created_at DESC;",
-          [userId]
+          "SELECT * FROM saved_bookmarks ORDER BY created_at DESC;"
         );
-        return res.status(200).json({ success: true, user_id: userId, bookmarks: dbRes.rows });
+        return res.status(200).json({ success: true, bookmarks: dbRes.rows });
       }
 
       if (req.method === 'POST') {
@@ -124,15 +120,15 @@ export default async function handler(req, res) {
           "INSERT INTO saved_bookmarks (id, url, title, thumbnail, platform, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?);",
           [itemId, item.url || '', item.title || 'Saved Link', item.thumbnail || '', item.platform || 'Web', item.notes || '', userId]
         );
-        return res.status(200).json({ success: true, id: itemId, user_id: userId });
+        return res.status(200).json({ success: true, id: itemId });
       }
 
       if (req.method === 'DELETE') {
         const itemId = req.query.id;
         if (itemId) {
-          await executeTurso("DELETE FROM saved_bookmarks WHERE id = ? AND user_id = ?;", [itemId, userId]);
+          await executeTurso("DELETE FROM saved_bookmarks WHERE id = ?;", [itemId]);
         }
-        return res.status(200).json({ success: true, user_id: userId });
+        return res.status(200).json({ success: true });
       }
     }
 

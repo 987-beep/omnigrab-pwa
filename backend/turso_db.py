@@ -74,9 +74,9 @@ def check_turso_health() -> Dict[str, Any]:
             "latency_ms": res.get("latency_ms"),
             "server_time": res["rows"][0].get("server_time") if res.get("rows") else None,
             "security": {
-                "isolation": "Tenant / User Vault (Zero-Leakage)",
+                "isolation": "Personal Private Storage Architecture",
                 "auto_prune": "Daily at 02:00 AM (Downloads Only)",
-                "preserved_data": "User Accounts, Vault Keys, Bookmarks & Settings"
+                "preserved_data": "Bookmarks & Settings"
             },
             "last_maintenance": maintenance
         }
@@ -86,20 +86,21 @@ def check_turso_health() -> Dict[str, Any]:
             "error": str(e)
         }
 
-# --- MULTI-USER / MULTI-DEVICE TENANT ISOLATION ---
+# --- CLOUD HISTORY & BOOKMARKS REPOSITORY ---
 
-def get_cloud_history(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+def get_cloud_history(user_id: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
     check_and_lazy_prune()
-    if not user_id or user_id.strip() == "":
-        user_id = "default_guest"
-    
-    sql = """
-    SELECT * FROM downloads_history 
-    WHERE user_id = ? 
-    ORDER BY created_at DESC 
-    LIMIT ?
-    """
-    res = execute_query(sql, [user_id, limit])
+    if not user_id or user_id in ["default_guest", "all", "owner", "usr_guest", ""]:
+        sql = "SELECT * FROM downloads_history ORDER BY created_at DESC LIMIT ?"
+        res = execute_query(sql, [limit])
+    else:
+        sql = """
+        SELECT * FROM downloads_history 
+        WHERE user_id = ? OR user_id IS NULL OR user_id = 'default_guest'
+        ORDER BY created_at DESC 
+        LIMIT ?
+        """
+        res = execute_query(sql, [user_id, limit])
     return res.get("rows", [])
 
 def add_cloud_history(item: Dict[str, Any], user_id: str, device_id: str = "browser") -> Dict[str, Any]:
@@ -140,12 +141,13 @@ def delete_cloud_history(item_id: str, user_id: str) -> bool:
         execute_query("DELETE FROM downloads_history WHERE id = ? AND user_id = ?;", [item_id, user_id])
     return True
 
-def get_cloud_bookmarks(user_id: str) -> List[Dict[str, Any]]:
-    if not user_id:
-        user_id = "default_guest"
-        
-    sql = "SELECT * FROM saved_bookmarks WHERE user_id = ? ORDER BY created_at DESC"
-    res = execute_query(sql, [user_id])
+def get_cloud_bookmarks(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    if not user_id or user_id in ["default_guest", "all", "owner", "usr_guest", ""]:
+        sql = "SELECT * FROM saved_bookmarks ORDER BY created_at DESC"
+        res = execute_query(sql)
+    else:
+        sql = "SELECT * FROM saved_bookmarks WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC"
+        res = execute_query(sql, [user_id])
     return res.get("rows", [])
 
 def add_cloud_bookmark(item: Dict[str, Any], user_id: str) -> Dict[str, Any]:

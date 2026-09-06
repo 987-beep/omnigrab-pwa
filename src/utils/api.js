@@ -1,8 +1,8 @@
-// API & Utilities Client for OmniGrab Pro with Zero-Leakage Tenant Isolation & 2:00 AM Midnight Auto-Prune
+// API & Utilities Client for OmniGrab Pro with Cloud Sync & 02:00 AM Midnight Auto-Prune
 
 const API_BASE = '';
 
-// --- ZERO-KNOWLEDGE USER & DEVICE TENANT IDENTITY ---
+// --- DEVICE IDENTITY & CLOUD SYNC ---
 
 export function getOrCreateUserId() {
   try {

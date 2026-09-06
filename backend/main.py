@@ -155,7 +155,7 @@ def health_check():
         "ffmpeg_path": ffmpeg_path,
         "turso": turso_status,
         "security": {
-            "privacy_architecture": "Zero-Knowledge Multi-User Tenant Isolation",
+            "privacy_architecture": "Personal Private Cloud Storage Architecture",
             "midnight_cleanup": "02:00 AM UTC (Downloads purged, User & Bookmarks preserved)",
             "device_pairing": "Supported via Private Vault Keys"
         },
