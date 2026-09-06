@@ -634,6 +634,12 @@ async def download_media(
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
 
+    try:
+        import static_ffmpeg
+        static_ffmpeg.add_paths()
+    except Exception:
+        pass
+
     temp_id = str(uuid.uuid4())[:10]
     out_dir = DOWNLOADS_DIR / temp_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -692,12 +698,12 @@ async def download_media(
         })
     elif format_id and format_id != "best" and format_id != "direct_video":
         ydl_opts.update({
-            'format': f"{format_id}+bestaudio/bestvideo[height<={format_id}]+bestaudio/best",
+            'format': f"{format_id}+bestaudio/bestvideo[height<={format_id}]+bestaudio/best[ext=mp4]/best",
             'merge_output_format': 'mp4',
         })
     else:
         ydl_opts.update({
-            'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+            'format': 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
             'merge_output_format': 'mp4',
         })
 
