@@ -1,32 +1,34 @@
-# ⚡ OmniGrab Pro - Universal Media Downloader, Trimmer & Companion Suite
+# ⚡ OmniGrab Pro - Universal Multi-User Media Downloader, Trimmer & Companion Suite
 
 **Live Website**: [https://omnigrab-pwa.vercel.app/](https://omnigrab-pwa.vercel.app/)  
-**GitHub Repository**: [https://github.com/vishishthgaurlittle-byte/omnigrab-pwa](https://github.com/vishishthgaurlittle-byte/omnigrab-pwa)  
+**GitHub Repository**: [https://github.com/987-beep/omnigrab-pwa](https://github.com/987-beep/omnigrab-pwa)  
 **Database**: Turso LibSQL Cloud (`AWS ap-south-1` Mumbai)
 
 ---
 
 ## 🌟 Key Architecture & Capabilities
 
-### 1. ✂️ Media Trim & Cut Studio & Video-to-GIF Converter
+### 1. 👥 Multi-User Platform & Profile Vaults
+- **1-Click Profile Switching**: Seamlessly toggle between **Personal Account**, **Work & Research**, **Family Shared Vault**, or custom profiles.
+- **Custom Profile Editor**: Custom avatars (⚡, 💼, 🌟, 🎬, 🚀, 💎, 🎧, 🎮, 🛡️, 👑, 🔥, 🌈), theme color accents (Neon Cyan, Electric Purple, Emerald Green, Amber Gold, Vibrant Rose), and roles (*Owner, Member, Shared, Guest*).
+- **PIN-Protected Vaults**: Optional 4-digit PIN locks for sensitive personal profiles on shared devices.
+- **Cross-Profile Media Transfer**: Send any downloaded video or photo directly into another user profile’s vault with 1 click.
+- **Instant Device Pairing QR**: Scan with iPhone or Android camera to link any phone directly into that user profile.
+
+### 2. ✂️ Media Trim & Cut Studio & Video-to-GIF Converter
 - **Custom Timeframe Trimmer**: Set Start & End timestamps (e.g. `00:10` to `00:45`) to extract specific video segments or audio clips.
 - **Animated GIF Maker**: Convert any video clip into smooth looping GIFs with customizable FPS (15 / 20 / 25 / 30 fps).
 - **Custom Ringtones**: Cut audio segments directly into 320kbps MP3 ringtones.
 
-### 2. 📝 Subtitle & Caption Extractor (.SRT / .VTT)
+### 3. 📝 Subtitle & Caption Extractor (.SRT / .VTT)
 - Download subtitles, closed captions, and AI speech-to-text transcripts in multiple languages (English, Auto-Generated, Hindi, etc.) in standard `.srt` format.
 
-### 3. 📱 Instant QR Code Mobile Handoff
+### 4. 📱 Instant QR Code Mobile Handoff
 - 1-click QR code handoff: Point your phone camera (iPhone / Android) at your laptop screen to instantly open the extracted video in your mobile PWA without typing long URLs.
-
-### 4. 🔒 Zero-Knowledge Multi-User Tenant Isolation
-- **Client-Side Cryptographic UUID**: Every user operates inside an isolated tenant vault (`usr_...`).
-- **Strict SQL Query Scoping**: No user can ever view, inspect, or delete another person's downloads or bookmarks.
-- **Private Multi-Device Vault Linking**: Link your personal Android phone and Laptop together with a private 6-digit Sync PIN (`VAULT-XXXX`).
 
 ### 5. 🧹 Automated 02:00 AM Midnight Storage Auto-Pruning
 - **Deleted Daily at 02:00 AM**: Ephemeral download logs and temporary stream buffers are purged to protect Turso cloud storage limits and keep database performance fast.
-- **PRESERVED FOREVER**: User Bookmarks (`saved_bookmarks`), User Vaults (`user_vaults`), and Settings (`user_settings`) are **never deleted**.
+- **PRESERVED FOREVER**: All User Profiles (`user_profiles`), User Bookmarks (`saved_bookmarks`), Vault PINs (`user_vaults`), and Settings (`user_settings`) are **never deleted**.
 
 ### 6. 🧩 Chrome Extension Companion (Manifest V3)
 - **On-Page Floating Badges**: Automatically injects high-tech `⚡ OmniGrab Save` pills over `<video>`, Instagram Reels, and TikTok clips.
