@@ -3,10 +3,19 @@ import path from 'path';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Content-Type', 'application/json');
-  return res.status(200).json({
-    status: 'ready',
-    message: 'Chrome Extension V3 is bundled inside the repo in the /extension folder',
-    folder: 'extension/'
-  });
+  
+  const zipPath = path.join(process.cwd(), 'public', 'OmniGrab_Chrome_Extension_V3.zip');
+  
+  if (fs.existsSync(zipPath)) {
+    const stat = fs.statSync(zipPath);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="OmniGrab_Chrome_Extension_V3.zip"');
+    res.setHeader('Content-Length', stat.size);
+    
+    const stream = fs.createReadStream(zipPath);
+    return stream.pipe(res);
+  } else {
+    // If running in edge without filesystem access, redirect to static asset
+    return res.redirect(302, '/OmniGrab_Chrome_Extension_V3.zip');
+  }
 }
