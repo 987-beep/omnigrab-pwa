@@ -268,9 +268,14 @@ export async function downloadWithProgress(url, formatId, downloadType, filename
       try {
         const parsed = JSON.parse(text);
         if (parsed.direct_url) {
-          // Direct fallback
-          window.open(parsed.direct_url, '_blank');
-          onProgress({ progress: 100, status: 'Opened direct download stream!', bytes: 0, total: 0 });
+          // Direct silent download trigger without popup
+          const a = document.createElement('a');
+          a.href = parsed.direct_url;
+          a.download = filename || 'media_download.mp4';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => document.body.removeChild(a), 1000);
+          onProgress({ progress: 100, status: 'Direct file download triggered!', bytes: 0, total: 0 });
           return true;
         }
         throw new Error(parsed.detail || parsed.error || 'Server could not stream this video');

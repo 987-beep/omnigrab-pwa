@@ -173,19 +173,17 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
       const a = document.createElement('a');
       a.href = mediaData.direct_url;
       a.download = filename;
-      a.target = '_blank';
       document.body.appendChild(a);
       a.click();
       setTimeout(() => document.body.removeChild(a), 1000);
       return;
     }
 
-    // 3. Trigger direct backend stream
+    // 3. Trigger direct backend stream without popup
     const directApiUrl = getDownloadUrl(targetUrl, format?.format_id || 'best', isAudio ? 'audio' : 'video', filename);
     const link = document.createElement('a');
     link.href = directApiUrl;
     link.download = filename;
-    link.target = '_blank';
     document.body.appendChild(link);
     link.click();
     setTimeout(() => document.body.removeChild(link), 1000);
