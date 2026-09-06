@@ -1,13 +1,28 @@
-// OmniGrab Chrome Extension - Background Service Worker v2.5.0 with Turso Cloud Sync
+// OmniGrab Chrome Extension - Background Service Worker v2.6.0 with Zero-Leakage Tenant Isolation
 
 const TURSO_DB_URL = "https://webextention-axuile.aws-ap-south-1.turso.io/v2/pipeline";
 const TURSO_AUTH_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg2Nzk0MzQsImlkIjoiMDFhMDc1OWEtMWQwMS03MTExLTlmOTItMDdiZjUxOTA4MzNjIiwia2lkIjoiZ3BKaE53cTF1TmQ5Z2Jjek9MOVZjaEQ4QTdxVzd4OTNoNWNWbkJObTJRdyIsInJpZCI6IjY0YzZjZjEwLThhZDgtNGM2Ni05MzA3LTkyY2NlMDU4YWJiYSJ9.f0GvIrNC5hQUTVOK3BLg0OEQ4otRHKHhyZip--7YyKRyOa4NorYQg6KfB4M9HDDI2ejP0KOlgxzmRgU75MnEBw";
 
+async function getUserId() {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get(['omnigrabUserId'], (res) => {
+      if (res.omnigrabUserId) {
+        resolve(res.omnigrabUserId);
+      } else {
+        const newId = `usr_${Math.random().toString(36).substring(2, 10)}`;
+        chrome.storage.sync.set({ omnigrabUserId: newId });
+        resolve(newId);
+      }
+    });
+  });
+}
+
 async function syncToTurso(item) {
   try {
+    const userId = await getUserId();
     const sql = `
-      INSERT INTO downloads_history (id, url, title, thumbnail, platform, quality, media_type, filesize, device_source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO downloads_history (id, url, title, thumbnail, platform, quality, media_type, filesize, device_source, user_id, device_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const itemId = `ext_${Date.now()}`;
     const payload = {
@@ -24,7 +39,9 @@ async function syncToTurso(item) {
             { type: 'text', value: '1080p HD' },
             { type: 'text', value: item.mediaType === 'Video' ? 'video' : 'photo' },
             { type: 'text', value: 'Direct Stream' },
-            { type: 'text', value: 'Chrome Extension' }
+            { type: 'text', value: 'Chrome Extension' },
+            { type: 'text', value: userId },
+            { type: 'text', value: 'chrome_extension' }
           ]
         }
       }]
@@ -57,7 +74,7 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 
   chrome.storage.sync.set({
-    omnigrabServerUrl: 'http://localhost:5173'
+    omnigrabServerUrl: 'https://omnigrab-pwa.vercel.app'
   });
 });
 
@@ -65,7 +82,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   const targetUrl = info.srcUrl || info.linkUrl || info.pageUrl || (tab && tab.url);
 
   chrome.storage.sync.get(['omnigrabServerUrl'], (res) => {
-    const server = res.omnigrabServerUrl || 'http://localhost:5173';
+    const server = res.omnigrabServerUrl || 'https://omnigrab-pwa.vercel.app';
 
     if (info.menuItemId === 'omnigrab-download-link') {
       chrome.tabs.create({

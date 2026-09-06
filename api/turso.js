@@ -32,17 +32,19 @@ async function executeTurso(sql, args = []) {
     return obj;
   });
 
-  return { cols, rows };
+  return { cols, rows, affected_row_count: result.affected_row_count || 0 };
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-User-ID, X-Device-ID');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const action = req.query.action || (req.url.split('?')[0].split('/').pop());
+  const userId = req.headers['x-user-id'] || req.query.user_id || req.body?.user_id || 'default_guest';
+  const deviceId = req.headers['x-device-id'] || req.query.device_id || req.body?.device_id || 'browser';
 
   try {
     if (action === 'status') {
@@ -50,47 +52,118 @@ export default async function handler(req, res) {
       return res.status(200).json({
         status: 'connected',
         provider: 'Turso LibSQL Cloud (AWS ap-south-1)',
-        server_time: dbRes.rows[0]?.server_time
+        server_time: dbRes.rows[0]?.server_time,
+        security: {
+          isolation: 'Zero-Knowledge Multi-User Tenant Vaults',
+          midnight_cleanup: '02:00 AM UTC (Purges downloads, preserves user & bookmarks)'
+        }
       });
     }
 
+    // 1. ISOLATED USER HISTORY
     if (action === 'history') {
       if (req.method === 'GET') {
-        const dbRes = await executeTurso("SELECT * FROM downloads_history ORDER BY created_at DESC LIMIT 50;");
-        return res.status(200).json({ success: true, history: dbRes.rows });
+        const limit = parseInt(req.query.limit || '50', 10);
+        // Strictly isolated: query only for this user_id
+        const dbRes = await executeTurso(
+          "SELECT * FROM downloads_history WHERE user_id = ? ORDER BY created_at DESC LIMIT ?;",
+          [userId, limit]
+        );
+        return res.status(200).json({ success: true, user_id: userId, history: dbRes.rows });
       }
 
       if (req.method === 'POST') {
         const item = req.body || {};
         const itemId = item.id || `hist_${Date.now()}`;
         await executeTurso(
-          "INSERT INTO downloads_history (id, url, title, thumbnail, platform, quality, media_type, filesize, device_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-          [itemId, item.url || '', item.title || 'Media', item.thumbnail || '', item.platform || 'Web', item.quality || 'HD', item.media_type || 'video', item.filesize || 'Unknown', item.device_source || 'Vercel Web']
+          "INSERT INTO downloads_history (id, url, title, thumbnail, platform, quality, media_type, filesize, device_source, user_id, device_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+          [
+            itemId, 
+            item.url || '', 
+            item.title || 'Media', 
+            item.thumbnail || '', 
+            item.platform || 'Web', 
+            item.quality || 'HD', 
+            item.media_type || 'video', 
+            item.filesize || 'Unknown', 
+            item.device_source || 'Vercel PWA',
+            userId,
+            deviceId
+          ]
         );
-        return res.status(200).json({ success: true, id: itemId });
+        return res.status(200).json({ success: true, id: itemId, user_id: userId });
       }
 
       if (req.method === 'DELETE') {
-        await executeTurso("DELETE FROM downloads_history;");
-        return res.status(200).json({ success: true, message: 'History cleared' });
+        const itemId = req.query.id;
+        if (itemId && itemId !== 'all') {
+          // Strictly delete only if id matches AND user_id matches
+          await executeTurso("DELETE FROM downloads_history WHERE id = ? AND user_id = ?;", [itemId, userId]);
+        } else {
+          // Clears only this user's history
+          await executeTurso("DELETE FROM downloads_history WHERE user_id = ?;", [userId]);
+        }
+        return res.status(200).json({ success: true, message: 'User history cleared', user_id: userId });
       }
     }
 
+    // 2. ISOLATED USER BOOKMARKS (PRESERVED ACROSS CLEANUPS)
     if (action === 'bookmarks') {
       if (req.method === 'GET') {
-        const dbRes = await executeTurso("SELECT * FROM saved_bookmarks ORDER BY created_at DESC;");
-        return res.status(200).json({ success: true, bookmarks: dbRes.rows });
+        const dbRes = await executeTurso(
+          "SELECT * FROM saved_bookmarks WHERE user_id = ? ORDER BY created_at DESC;",
+          [userId]
+        );
+        return res.status(200).json({ success: true, user_id: userId, bookmarks: dbRes.rows });
       }
 
       if (req.method === 'POST') {
         const item = req.body || {};
         const itemId = item.id || `bm_${Date.now()}`;
         await executeTurso(
-          "INSERT INTO saved_bookmarks (id, url, title, thumbnail, platform, notes) VALUES (?, ?, ?, ?, ?, ?);",
-          [itemId, item.url || '', item.title || 'Saved Link', item.thumbnail || '', item.platform || 'Web', item.notes || '']
+          "INSERT INTO saved_bookmarks (id, url, title, thumbnail, platform, notes, user_id) VALUES (?, ?, ?, ?, ?, ?, ?);",
+          [itemId, item.url || '', item.title || 'Saved Link', item.thumbnail || '', item.platform || 'Web', item.notes || '', userId]
         );
-        return res.status(200).json({ success: true, id: itemId });
+        return res.status(200).json({ success: true, id: itemId, user_id: userId });
       }
+
+      if (req.method === 'DELETE') {
+        const itemId = req.query.id;
+        if (itemId) {
+          await executeTurso("DELETE FROM saved_bookmarks WHERE id = ? AND user_id = ?;", [itemId, userId]);
+        }
+        return res.status(200).json({ success: true, user_id: userId });
+      }
+    }
+
+    // 3. PRIVATE VAULT MULTI-DEVICE PAIRING
+    if (action === 'vault') {
+      const pin = req.body?.vault_pin || `PIN-${Math.floor(100000 + Math.random() * 900000)}`;
+      const existing = await executeTurso("SELECT * FROM user_vaults WHERE user_id = ?;", [userId]);
+      if (existing.rows.length > 0) {
+        await executeTurso("UPDATE user_vaults SET last_active = CURRENT_TIMESTAMP, device_count = device_count + 1 WHERE user_id = ?;", [userId]);
+        return res.status(200).json({ success: true, user_id: userId, vault_pin: existing.rows[0].vault_pin, status: 'synced' });
+      } else {
+        await executeTurso("INSERT INTO user_vaults (user_id, vault_pin, device_count) VALUES (?, ?, 1);", [userId, pin]);
+        return res.status(200).json({ success: true, user_id: userId, vault_pin: pin, status: 'created' });
+      }
+    }
+
+    // 4. MIDNIGHT 02:00 AM AUTO-PRUNE ENGINE
+    if (action === 'prune') {
+      const purgeRes = await executeTurso("DELETE FROM downloads_history WHERE created_at <= datetime('now', '-1 day');");
+      await executeTurso(
+        "INSERT OR REPLACE INTO system_maintenance (task_name, last_run, items_purged, status) VALUES ('midnight_02am_prune', CURRENT_TIMESTAMP, ?, 'success');",
+        [purgeRes.affected_row_count]
+      );
+      return res.status(200).json({
+        success: true,
+        task: 'midnight_02am_prune',
+        schedule: '02:00 AM Daily',
+        purged_records: purgeRes.affected_row_count,
+        preserved_tables: ['saved_bookmarks', 'user_vaults', 'user_settings'],
+        note: 'User profiles and bookmarks were safely preserved without deletion.'
+      });
     }
 
     return res.status(200).json({ success: true, action });

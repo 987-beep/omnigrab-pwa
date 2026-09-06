@@ -2,6 +2,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "crons": [
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 2 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/health",
@@ -10,6 +16,10 @@
     {
       "source": "/api/extract",
       "destination": "/api/extract"
+    },
+    {
+      "source": "/api/cron/cleanup",
+      "destination": "/api/cron/cleanup"
     },
     {
       "source": "/api/turso/(.*)",
