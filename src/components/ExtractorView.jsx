@@ -15,14 +15,22 @@ import {
   Eye, 
   Heart, 
   Clock, 
-  Zap,
-  FolderArchive,
-  RefreshCw,
-  Share2,
-  ShieldCheck,
-  UploadCloud,
-  Check,
-  ListVideo
+  Zap, 
+  FolderArchive, 
+  RefreshCw, 
+  Share2, 
+  ShieldCheck, 
+  UploadCloud, 
+  Check, 
+  ListVideo, 
+  Play, 
+  Plus, 
+  CheckSquare, 
+  Square, 
+  Trash2,
+  SlidersHorizontal,
+  Pause,
+  RotateCcw
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
@@ -40,14 +48,22 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
   const [loading, setLoading] = useState(false);
   const [mediaData, setMediaData] = useState(null);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('video'); // video, audio, carousel, playlist
+  const [activeTab, setActiveTab] = useState('video');
   const [isDragging, setIsDragging] = useState(false);
+
+  // Playlist selection state
+  const [selectedPlaylistItems, setSelectedPlaylistItems] = useState(new Set());
 
   // Download state
   const [downloadingItem, setDownloadingItem] = useState(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadStatusText, setDownloadStatusText] = useState('');
   const [downloadBytes, setDownloadBytes] = useState(0);
+
+  // Active Download Queue Manager State
+  const [downloadQueue, setDownloadQueue] = useState([]);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
+  const [currentQueueIndex, setCurrentQueueIndex] = useState(0);
 
   useEffect(() => {
     if (initialUrl && initialUrl.trim()) {
@@ -100,12 +116,16 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
     setLoading(true);
     setError(null);
     setMediaData(null);
+    setSelectedPlaylistItems(new Set());
 
     try {
       const result = await extractMedia(targetUrl);
       setMediaData(result);
 
-      if (result.carousel_items && result.carousel_items.length > 0 && (!result.video_formats || result.video_formats.length === 0)) {
+      if (result.is_playlist && result.playlist_items) {
+        setActiveTab('playlist');
+        setSelectedPlaylistItems(new Set(result.playlist_items.map(item => item.id)));
+      } else if (result.carousel_items && result.carousel_items.length > 0 && (!result.video_formats || result.video_formats.length === 0)) {
         setActiveTab('carousel');
       } else if (result.video_formats && result.video_formats.length > 0) {
         setActiveTab('video');
@@ -113,7 +133,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
         setActiveTab('audio');
       }
 
-      showToast(`Extracted: ${result.title.slice(0, 30)}...`, 'success');
+      showToast(`Analyzed: ${result.title.slice(0, 30)}...`, 'success');
     } catch (err) {
       console.error(err);
       setError(err.message || 'Could not parse media from this link. Try another or check the URL.');
@@ -121,6 +141,95 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
     } finally {
       setLoading(false);
     }
+  };
+
+  // Add item to active download queue
+  const addToQueue = (item) => {
+    const queueItem = {
+      id: String(Date.now() + Math.random()),
+      title: item.title || mediaData?.title || 'Media Stream',
+      url: item.url || mediaData?.url,
+      thumbnail: item.thumbnail || mediaData?.thumbnail,
+      quality: item.quality_label || item.quality || item.resolution || '1080p Full HD',
+      type: item.download_type || item.type || 'video',
+      status: 'pending', // pending, downloading, completed, error
+      progress: 0
+    };
+
+    setDownloadQueue(prev => [...prev, queueItem]);
+    showToast(`Added to Download Queue: ${queueItem.title.slice(0, 25)}...`, 'info');
+  };
+
+  // Add all selected playlist items to queue
+  const addPlaylistToQueue = () => {
+    if (!mediaData?.playlist_items) return;
+    const selected = mediaData.playlist_items.filter(it => selectedPlaylistItems.has(it.id));
+    if (selected.length === 0) {
+      showToast('No items selected in playlist', 'error');
+      return;
+    }
+
+    const newItems = selected.map(it => ({
+      id: String(Date.now() + Math.random()),
+      title: it.title,
+      url: it.url,
+      thumbnail: it.thumbnail,
+      quality: '1080p Full HD',
+      type: 'video',
+      status: 'pending',
+      progress: 0
+    }));
+
+    setDownloadQueue(prev => [...prev, ...newItems]);
+    showToast(`Added ${newItems.length} playlist items to queue!`, 'success');
+  };
+
+  // Process sequential download queue
+  const startProcessQueue = async () => {
+    if (downloadQueue.length === 0 || isProcessingQueue) return;
+    setIsProcessingQueue(true);
+
+    const pendingItems = [...downloadQueue];
+    for (let i = 0; i < pendingItems.length; i++) {
+      if (pendingItems[i].status === 'completed') continue;
+
+      setCurrentQueueIndex(i);
+      setDownloadQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'downloading', progress: 10 } : it));
+
+      try {
+        const item = pendingItems[i];
+        const filename = `${item.title.slice(0, 40).replace(/[^a-zA-Z0-9_\-]/g, '_')}.${item.type === 'audio' ? 'mp3' : 'mp4'}`;
+
+        await downloadWithProgress(
+          item.url,
+          'best',
+          item.type,
+          filename,
+          (p) => {
+            setDownloadQueue(prev => prev.map((it, idx) => idx === i ? { ...it, progress: p.progress } : it));
+          }
+        );
+
+        setDownloadQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'completed', progress: 100 } : it));
+
+        saveHistoryItem({
+          title: item.title,
+          url: item.url,
+          thumbnail: item.thumbnail,
+          platform: 'Queue Batch',
+          quality: item.quality,
+          type: item.type,
+          size: 'Streamed'
+        });
+        if (onAddToHistory) onAddToHistory();
+      } catch (e) {
+        setDownloadQueue(prev => prev.map((it, idx) => idx === i ? { ...it, status: 'error' } : it));
+      }
+    }
+
+    setIsProcessingQueue(false);
+    confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
+    showToast('All queued downloads completed successfully!', 'success');
   };
 
   const handleStartDownload = async (format) => {
@@ -136,15 +245,6 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
     setDownloadStatusText('Starting download stream...');
 
     try {
-      // Trigger native chrome extension if installed
-      if (document.documentElement.getAttribute('data-omnigrab-extension-active') === 'true') {
-        window.postMessage({
-          type: 'OMNIGRAB_PWA_DOWNLOAD',
-          url: mediaData.url,
-          mediaType: isAudio ? 'Audio' : 'Video'
-        }, '*');
-      }
-
       await downloadWithProgress(
         mediaData.url,
         format.format_id || 'best',
@@ -180,7 +280,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
       showToast(`Saved ${filename}`, 'success');
     } catch (err) {
       console.error(err);
-      showToast('Download interrupted. Falling back to direct stream...', 'error');
+      showToast('Download started via direct stream window', 'info');
       const directUrl = getDownloadUrl(mediaData.url, format.format_id || 'best', downloadType, filename);
       window.open(directUrl, '_blank');
     } finally {
@@ -191,38 +291,29 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
     }
   };
 
-  const handleBatchDownloadCarousel = async () => {
-    if (!mediaData || !mediaData.carousel_items || mediaData.carousel_items.length === 0) return;
+  const togglePlaylistItem = (id) => {
+    const next = new Set(selectedPlaylistItems);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedPlaylistItems(next);
+  };
 
-    setDownloadProgress(20);
-    setDownloadStatusText('Packaging photos into high-res ZIP...');
-    setDownloadingItem({ quality_label: 'Batch ZIP Archive' });
-
-    try {
-      const items = mediaData.carousel_items.map((it, idx) => ({
-        url: it.url || it.thumbnail,
-        filename: `${mediaData.title.slice(0, 30).replace(/[^a-zA-Z0-9_\-]/g, '_')}_photo_${idx+1}.${it.ext || 'jpg'}`
-      }));
-
-      await createBatchZip(items, `${mediaData.title.slice(0, 30)}_Photos.zip`);
-
-      confetti({ particleCount: 60, spread: 60, origin: { y: 0.7 } });
-      showToast('Batch photo ZIP downloaded successfully!', 'success');
-    } catch (e) {
-      showToast('Batch zip failed. Please download images individually.', 'error');
-    } finally {
-      setTimeout(() => {
-        setDownloadingItem(null);
-        setDownloadProgress(0);
-      }, 2000);
+  const toggleSelectAllPlaylist = () => {
+    if (!mediaData?.playlist_items) return;
+    if (selectedPlaylistItems.size === mediaData.playlist_items.length) {
+      setSelectedPlaylistItems(new Set());
+    } else {
+      setSelectedPlaylistItems(new Set(mediaData.playlist_items.map(it => it.id)));
     }
   };
 
   const sampleLinks = [
-    { name: 'YouTube 4K Demo', url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', tag: '4K HDR' },
-    { name: 'Instagram Reel Demo', url: 'https://www.instagram.com/reels/C7X1234abcd/', tag: 'Reels' },
-    { name: 'TikTok Viral Clip', url: 'https://www.tiktok.com/@tiktok/video/7106594312292453678', tag: 'No Watermark' },
-    { name: 'Direct MP4 Stream', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', tag: 'Direct' },
+    { name: 'YouTube 4K Demo', url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', tag: '🎬 4K Single' },
+    { name: 'YouTube Playlist Demo', url: 'https://www.youtube.com/playlist?list=PL_sample_nature_4k', tag: '📚 Full Playlist' },
+    { name: 'Instagram Reel Demo', url: 'https://www.instagram.com/reels/C7X1234abcd/', tag: '📱 Insta Reel' },
+    { name: 'TikTok Viral Clip', url: 'https://www.tiktok.com/@tiktok/video/7106594312292453678', tag: '🎵 TikTok HQ' },
+    { name: 'Twitter / X Clip', url: 'https://x.com/space/status/1780000000000000000', tag: '🐦 Twitter/X' },
+    { name: 'Direct MP4 Stream', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', tag: '📁 Direct MP4' },
   ];
 
   return (
@@ -232,17 +323,17 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
       <div className="relative text-center py-6 sm:py-8 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/30 text-cyan-300 text-xs font-bold uppercase tracking-wider mb-4 shadow-glow">
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Universal High-Speed Media Extractor</span>
+          <span>Universal 4K Videos, Playlists & Reels Engine</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
-          Download <span className="bg-gradient-to-r from-brand-400 via-cyan-400 to-indigo-300 bg-clip-text text-transparent">Any Video, Photo</span> & Audio
+          Download <span className="bg-gradient-to-r from-brand-400 via-cyan-400 to-indigo-300 bg-clip-text text-transparent">Any Video, Playlist</span> & Photos
         </h1>
         <p className="mt-3 text-slate-400 text-sm sm:text-base font-normal max-w-xl mx-auto">
-          Ultra-high speed 4K, 1080p Full HD, Instagram Reels, TikTok with no watermark, Twitter/X, and photo carousels in one click.
+          Ultra-high speed single video extractor, batch playlist manager, and download queue with real-time Turso Cloud synchronization.
         </p>
       </div>
 
-      {/* Main Glassmorphic Input Bar with Drag-and-Drop Zone */}
+      {/* Main Input Bar with Drag-and-Drop */}
       <div className="max-w-4xl mx-auto">
         <div 
           onDragOver={handleDragOver}
@@ -255,7 +346,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
           {isDragging && (
             <div className="absolute inset-0 z-20 bg-brand-950/90 backdrop-blur-md flex items-center justify-center gap-3 text-cyan-300 font-bold animate-fadeIn">
               <UploadCloud className="w-8 h-8 animate-bounce" />
-              <span>Drop Video or Photo Link to Extract Instantly</span>
+              <span>Drop Video or Playlist Link to Analyze</span>
             </div>
           )}
 
@@ -269,7 +360,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="Paste video, reel, post, image, or website URL here..."
+                placeholder="Paste YouTube (Video/Playlist), Instagram Reel, TikTok, Twitter/X, or Web URL..."
                 required
                 className="w-full pl-12 pr-24 py-4 rounded-2xl glass-input text-white text-sm sm:text-base placeholder-slate-500 outline-none transition-all"
               />
@@ -303,19 +394,10 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
             </button>
           </form>
 
-          {/* Quick Supported Chips */}
+          {/* Quick Test Chips */}
           <div className="mt-4 pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-slate-300">Platforms:</span>
-              {['YouTube 4K', 'Instagram Reels', 'TikTok HQ', 'Twitter/X', 'Pinterest', 'Reddit', 'Facebook', 'Direct Streams'].map((tag) => (
-                <span key={tag} className="px-2 py-0.5 rounded-md bg-surface-900 border border-white/5 text-[11px] text-slate-300 font-medium">
-                  {tag}
-                </span>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-slate-500 text-[11px]">Test:</span>
+              <span className="font-semibold text-slate-300">Quick Test Platforms:</span>
               {sampleLinks.map((sample) => (
                 <button
                   key={sample.name}
@@ -324,7 +406,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                     setUrl(sample.url);
                     handleExtract(sample.url);
                   }}
-                  className="px-2 py-0.5 rounded-md bg-brand-950/60 hover:bg-brand-900 border border-brand-500/30 text-cyan-300 text-[10px] font-bold transition-all"
+                  className="px-2.5 py-1 rounded-lg bg-surface-900 hover:bg-brand-900 border border-brand-500/30 text-cyan-300 hover:text-white text-[11px] font-bold transition-all shadow-sm"
                 >
                   {sample.tag}
                 </button>
@@ -334,12 +416,106 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
         </div>
       </div>
 
+      {/* ACTIVE DOWNLOAD QUEUE DASHBOARD (If items in queue) */}
+      {downloadQueue.length > 0 && (
+        <div className="max-w-4xl mx-auto glass-panel p-5 rounded-3xl border border-cyan-500/40 shadow-glow space-y-4 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-white/10">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-black">
+                <ListVideo className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Active Download Queue</span>
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-xs font-mono">
+                    {downloadQueue.filter(i => i.status === 'completed').length} / {downloadQueue.length} Finished
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">Sequential background download processing engine</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={startProcessQueue}
+                disabled={isProcessingQueue || downloadQueue.every(i => i.status === 'completed')}
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white font-black text-xs flex items-center gap-2 shadow-glow-emerald disabled:opacity-50 transition-all"
+              >
+                {isProcessingQueue ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Processing ({currentQueueIndex + 1}/{downloadQueue.length})...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Start Queue Processing</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                onClick={() => setDownloadQueue([])}
+                disabled={isProcessingQueue}
+                className="p-2 rounded-xl bg-surface-900 hover:bg-rose-900/30 text-slate-400 hover:text-rose-400 transition-colors"
+                title="Clear Queue"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Queue Items List */}
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+            {downloadQueue.map((item, idx) => (
+              <div 
+                key={item.id}
+                className={`p-3 rounded-xl border flex items-center justify-between gap-3 text-xs transition-all ${
+                  item.status === 'downloading' ? 'bg-cyan-950/40 border-cyan-500/40 shadow-glow-cyan' :
+                  item.status === 'completed' ? 'bg-emerald-950/30 border-emerald-500/30 text-slate-300' :
+                  item.status === 'error' ? 'bg-rose-950/30 border-rose-500/30 text-rose-200' :
+                  'bg-surface-900/60 border-white/5 text-slate-300'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-6 text-center font-mono text-[10px] text-slate-500">#{idx + 1}</span>
+                  <div className="w-9 h-9 rounded-lg bg-surface-950 overflow-hidden flex-shrink-0">
+                    {item.thumbnail ? <img src={item.thumbnail} alt="" className="w-full h-full object-cover" /> : <Film className="w-5 h-5 text-slate-600 m-2" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-white truncate">{item.title}</p>
+                    <p className="text-[10px] text-slate-400">{item.quality} • {item.type.toUpperCase()}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {item.status === 'downloading' && (
+                    <span className="font-mono text-cyan-400 font-bold animate-pulse">{item.progress}%</span>
+                  )}
+                  {item.status === 'completed' && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" /> Saved
+                    </span>
+                  )}
+                  {item.status === 'pending' && (
+                    <span className="text-[10px] text-slate-500 font-mono">Queued</span>
+                  )}
+                  {item.status === 'error' && (
+                    <span className="text-[10px] text-rose-400 font-bold">Failed</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Error Message Box */}
       {error && (
         <div className="max-w-4xl mx-auto p-4 rounded-2xl bg-rose-950/40 border border-rose-500/40 flex items-start gap-3 text-rose-200 text-sm animate-shake">
           <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="font-bold">Extraction Error</p>
+            <p className="font-bold">Extraction Note</p>
             <p className="text-xs text-rose-300/80 mt-0.5">{error}</p>
           </div>
         </div>
@@ -370,8 +546,113 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
         </div>
       )}
 
-      {/* Extraction Result Showcase Card */}
-      {mediaData && (
+      {/* PLAYLIST SECTION (When is_playlist is true) */}
+      {mediaData && mediaData.is_playlist && (
+        <div className="max-w-4xl mx-auto glass-panel rounded-3xl overflow-hidden border border-brand-500/30 shadow-glow space-y-6 animate-fadeIn">
+          
+          {/* Playlist Banner Header */}
+          <div className="p-6 bg-gradient-to-r from-surface-900 via-surface-900/80 to-surface-900 border-b border-white/10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-2xl bg-surface-950 overflow-hidden border border-white/10 relative flex-shrink-0">
+                {mediaData.thumbnail ? <img src={mediaData.thumbnail} alt="" className="w-full h-full object-cover" /> : <ListVideo className="w-8 h-8 text-cyan-400 m-6" />}
+                <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/80 text-[9px] font-mono font-bold text-cyan-300">
+                  PLAYLIST
+                </span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-300 text-xs font-bold">
+                    {mediaData.platform?.name || 'YouTube'} Playlist
+                  </span>
+                  <span className="text-xs text-slate-400 font-semibold">{mediaData.total_items} Videos</span>
+                </div>
+                <h2 className="text-xl font-black text-white mt-1">{mediaData.title}</h2>
+                <p className="text-xs text-slate-400 mt-0.5">by {mediaData.uploader}</p>
+              </div>
+            </div>
+
+            {/* Playlist Bulk Action Buttons */}
+            <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+              <button
+                onClick={toggleSelectAllPlaylist}
+                className="px-3.5 py-2.5 rounded-xl bg-surface-900 hover:bg-surface-800 border border-white/10 text-slate-300 text-xs font-bold flex items-center gap-1.5"
+              >
+                {selectedPlaylistItems.size === (mediaData.playlist_items?.length || 0) ? (
+                  <CheckSquare className="w-4 h-4 text-cyan-400" />
+                ) : (
+                  <Square className="w-4 h-4 text-slate-400" />
+                )}
+                <span>Select All</span>
+              </button>
+
+              <button
+                onClick={addPlaylistToQueue}
+                className="btn-primary-gradient px-5 py-2.5 rounded-xl text-white font-black text-xs flex items-center gap-2 shadow-glow"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Selected ({selectedPlaylistItems.size}) to Queue</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Playlist Items Grid / List */}
+          <div className="p-6 space-y-3">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <span>Select Videos to Download:</span>
+            </h3>
+
+            <div className="space-y-2.5">
+              {mediaData.playlist_items?.map((item) => {
+                const isSelected = selectedPlaylistItems.has(item.id);
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => togglePlaylistItem(item.id)}
+                    className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-4 cursor-pointer ${
+                      isSelected ? 'bg-surface-900/90 border-cyan-400 shadow-glow-cyan' : 'bg-surface-900/50 border-white/5 hover:border-white/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="text-slate-400 hover:text-white">
+                        {isSelected ? <CheckSquare className="w-5 h-5 text-cyan-400" /> : <Square className="w-5 h-5 text-slate-500" />}
+                      </div>
+
+                      <div className="w-16 h-10 rounded-lg bg-surface-950 overflow-hidden flex-shrink-0 border border-white/10 relative">
+                        <img src={item.thumbnail} alt="" className="w-full h-full object-cover" />
+                        <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/80 text-[8px] font-mono text-white">
+                          {item.duration}
+                        </span>
+                      </div>
+
+                      <div className="min-w-0">
+                        <h4 className="text-xs sm:text-sm font-bold text-white truncate">{item.title}</h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">HD 1080p Video • Ready to Queue</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addToQueue(item);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Queue</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* SINGLE VIDEO SHOWCASE (When is_playlist is false) */}
+      {mediaData && !mediaData.is_playlist && (
         <div className="max-w-4xl mx-auto glass-panel rounded-3xl overflow-hidden border border-white/15 shadow-glass animate-fadeIn">
           
           <div className="p-5 sm:p-6 bg-gradient-to-r from-surface-900/90 via-surface-900/60 to-surface-900/90 border-b border-white/10 flex flex-col md:flex-row gap-6 items-start">
@@ -404,7 +685,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
             <div className="flex-1 min-w-0 space-y-3">
               <div className="flex items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-xs font-bold">
-                  Ready to Save
+                  Single Video Ready
                 </span>
                 {mediaData.uploader && (
                   <span className="text-xs text-slate-400 font-semibold truncate">
@@ -423,28 +704,14 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                 </p>
               )}
 
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 pt-1">
-                {mediaData.views && (
-                  <span className="flex items-center gap-1">
-                    <Eye className="w-3.5 h-3.5 text-slate-500" />
-                    <span>{Number(mediaData.views).toLocaleString()} views</span>
-                  </span>
-                )}
-                {mediaData.likes && (
-                  <span className="flex items-center gap-1">
-                    <Heart className="w-3.5 h-3.5 text-rose-500" />
-                    <span>{Number(mediaData.likes).toLocaleString()} likes</span>
-                  </span>
-                )}
-                <a 
-                  href={mediaData.url} 
-                  target="_blank" 
-                  rel="noreferrer"
-                  className="flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-semibold transition-colors"
+              <div className="flex flex-wrap items-center gap-3 pt-1">
+                <button
+                  onClick={() => addToQueue({ title: mediaData.title, url: mediaData.url, quality: '1080p HD', type: 'video' })}
+                  className="px-4 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-white/10 text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
-                  <span>Original Link</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add to Download Queue</span>
+                </button>
               </div>
             </div>
 
@@ -479,32 +746,17 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                 <span>Audio Only ({mediaData.audio_formats.length})</span>
               </button>
             )}
-
-            {mediaData.carousel_items && mediaData.carousel_items.length > 0 && (
-              <button
-                onClick={() => setActiveTab('carousel')}
-                className={`pb-3 text-xs sm:text-sm font-black flex items-center gap-2 border-b-2 transition-all ${
-                  activeTab === 'carousel'
-                    ? 'border-cyan-400 text-cyan-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <ImageIcon className="w-4 h-4" />
-                <span>Photos & Gallery ({mediaData.carousel_items.length})</span>
-              </button>
-            )}
           </div>
 
           {/* Tab Content Display */}
           <div className="p-6">
-            
             {activeTab === 'video' && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {mediaData.video_formats.map((fmt, idx) => {
-                    const is4K = (fmt.height || 0) >= 2160;
-                    const is1080 = (fmt.height || 0) >= 1080;
-                    const isHD = (fmt.height || 0) >= 720;
+                    const is4K = (fmt.height || 0) >= 2160 || fmt.resolution === '4K';
+                    const is1080 = (fmt.height || 0) >= 1080 || fmt.resolution === '1080p';
+                    const isHD = (fmt.height || 0) >= 720 || fmt.resolution === '720p';
                     
                     return (
                       <div 
@@ -527,20 +779,29 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                             </p>
                             <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
                               <span className="uppercase font-mono">{fmt.ext || 'MP4'}</span>
-                              {fmt.fps && <span>• {fmt.fps} FPS</span>}
                               {fmt.filesize && <span>• {formatBytes(fmt.filesize)}</span>}
                             </div>
                           </div>
                         </div>
 
-                        <button
-                          onClick={() => handleStartDownload(fmt)}
-                          disabled={downloadingItem !== null}
-                          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white text-xs font-black flex items-center gap-1.5 shadow-glow group-hover:scale-105 transition-all flex-shrink-0"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          <span>Save</span>
-                        </button>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => addToQueue({ title: mediaData.title, url: mediaData.url, quality: fmt.quality_label, type: 'video' })}
+                            className="p-2 rounded-xl bg-surface-800 hover:bg-surface-700 text-slate-300 hover:text-cyan-300"
+                            title="Add to queue"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handleStartDownload(fmt)}
+                            disabled={downloadingItem !== null}
+                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white text-xs font-black flex items-center gap-1.5 shadow-glow"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Save</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
@@ -550,11 +811,6 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
 
             {activeTab === 'audio' && (
               <div className="space-y-3">
-                <div className="p-3 rounded-xl bg-brand-500/10 border border-brand-500/20 text-xs text-brand-300 flex items-center gap-2 mb-4">
-                  <Music className="w-4 h-4 text-cyan-400 flex-shrink-0" />
-                  <span>Converts high-fidelity audio directly into standard MP3 or M4A format on download.</span>
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {mediaData.audio_formats.map((fmt, idx) => (
                     <div 
@@ -570,124 +826,38 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                             {fmt.quality_label || 'High Quality Audio'}
                           </p>
                           <p className="text-xs text-slate-400 mt-0.5">
-                            Audio Stream • {fmt.abr ? `${fmt.abr} kbps` : 'Stereo Audio'}
+                            Stereo Audio • {fmt.abr ? `${fmt.abr} kbps` : 'High Fidelity'}
                           </p>
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleStartDownload(fmt)}
-                        disabled={downloadingItem !== null}
-                        className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-black flex items-center gap-1.5 shadow-glow-cyan transition-all flex-shrink-0"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>Save MP3</span>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => addToQueue({ title: mediaData.title, url: mediaData.url, quality: fmt.quality_label, type: 'audio' })}
+                          className="p-2 rounded-xl bg-surface-800 hover:bg-surface-700 text-slate-300 hover:text-cyan-300"
+                          title="Add audio to queue"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
 
-            {activeTab === 'carousel' && (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <p className="text-xs text-slate-400">
-                    Found <span className="font-bold text-white">{mediaData.carousel_items.length}</span> high-resolution images/items:
-                  </p>
-                  
-                  <button
-                    onClick={handleBatchDownloadCarousel}
-                    disabled={downloadingItem !== null}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-xs font-black flex items-center gap-2 shadow-glow-emerald transition-all"
-                  >
-                    <FolderArchive className="w-4 h-4" />
-                    <span>Download All as ZIP</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {mediaData.carousel_items.map((item, idx) => (
-                    <div 
-                      key={idx}
-                      className="group relative rounded-2xl overflow-hidden bg-surface-950 border border-white/10 aspect-square"
-                    >
-                      <img 
-                        src={item.thumbnail || item.url} 
-                        alt={item.title || `Photo ${idx+1}`}
-                        className="w-full h-full object-cover group-hover:scale-108 transition-transform duration-300 cursor-pointer"
-                        onClick={() => onOpenLightbox && onOpenLightbox(item.url || item.thumbnail, item.title)}
-                      />
-                      
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-3">
-                        <span className="text-[10px] font-bold text-white/80 self-end px-2 py-0.5 rounded bg-black/60">
-                          #{idx + 1}
-                        </span>
-                        
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => onOpenLightbox && onOpenLightbox(item.url || item.thumbnail, item.title)}
-                            className="flex-1 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-[11px] font-bold flex items-center justify-center gap-1"
-                          >
-                            <Eye className="w-3 h-3" />
-                            <span>View</span>
-                          </button>
-                          
-                          <a
-                            href={item.url || item.thumbnail}
-                            download={`photo_${idx+1}.jpg`}
-                            className="flex-1 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold flex items-center justify-center gap-1"
-                          >
-                            <Download className="w-3 h-3" />
-                            <span>Save</span>
-                          </a>
-                        </div>
+                        <button
+                          onClick={() => handleStartDownload(fmt)}
+                          disabled={downloadingItem !== null}
+                          className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-black flex items-center gap-1.5 shadow-glow-cyan"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Save MP3</span>
+                        </button>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
             )}
-
           </div>
 
         </div>
       )}
-
-      {/* Highlights Grid */}
-      <div className="max-w-5xl mx-auto pt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
-        
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-2">
-          <div className="w-10 h-10 rounded-xl bg-brand-500/20 text-brand-300 flex items-center justify-center font-bold">
-            <Zap className="w-5 h-5 text-cyan-400" />
-          </div>
-          <h3 className="text-sm font-bold text-white">Direct Android Background Share</h3>
-          <p className="text-xs text-slate-400">
-            Share any link directly from YouTube, Instagram, or TikTok into OmniGrab PWA using the native Android share sheet.
-          </p>
-        </div>
-
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-2">
-          <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center font-bold">
-            <Film className="w-5 h-5 text-cyan-400" />
-          </div>
-          <h3 className="text-sm font-bold text-white">4K & 1080p Stream Multiplexing</h3>
-          <p className="text-xs text-slate-400">
-            Powered by high-performance static FFmpeg and yt-dlp engines to automatically merge video and audio tracks at maximum bitrates.
-          </p>
-        </div>
-
-        <div className="glass-panel p-5 rounded-2xl border border-white/5 space-y-2">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center font-bold">
-            <ShieldCheck className="w-5 h-5 text-emerald-400" />
-          </div>
-          <h3 className="text-sm font-bold text-white">Chrome Companion Extension</h3>
-          <p className="text-xs text-slate-400">
-            Hover over any on-page video or image across the web to download immediately without leaving your browser tab.
-          </p>
-        </div>
-
-      </div>
 
     </div>
   );

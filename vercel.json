@@ -4,6 +4,30 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/health",
+      "destination": "/api/health"
+    },
+    {
+      "source": "/api/extract",
+      "destination": "/api/extract"
+    },
+    {
+      "source": "/api/turso/(.*)",
+      "destination": "/api/turso?action=$1"
+    },
+    {
+      "source": "/api/scrape-images",
+      "destination": "/api/scrape-images"
+    },
+    {
+      "source": "/api/batch-zip",
+      "destination": "/api/batch-zip"
+    },
+    {
+      "source": "/api/download-extension",
+      "destination": "/api/download-extension"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
