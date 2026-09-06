@@ -2,6 +2,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "build": {
+    "env": {
+      "UV_LINK_MODE": "copy"
+    }
+  },
+  "env": {
+    "UV_LINK_MODE": "copy"
+  },
   "crons": [
     {
       "path": "/api/cron/cleanup",
@@ -16,6 +24,10 @@
     {
       "source": "/api/extract",
       "destination": "/api/extract"
+    },
+    {
+      "source": "/api/download",
+      "destination": "/api/download"
     },
     {
       "source": "/api/cron/cleanup",
