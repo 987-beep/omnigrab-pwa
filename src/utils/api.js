@@ -235,6 +235,26 @@ export function getDownloadUrl(url, formatId = 'best', downloadType = 'video', f
   return `${API_BASE}/api/download?${params.toString()}`;
 }
 
+export function triggerDirectDownload(url, filename = '') {
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    if (filename) {
+      a.setAttribute('download', filename);
+    }
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      if (document.body.contains(a)) {
+        document.body.removeChild(a);
+      }
+    }, 2000);
+  } catch (e) {
+    window.location.href = url;
+  }
+}
+
 export function triggerBlobDownload(blob, filename) {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -249,96 +269,81 @@ export function triggerBlobDownload(blob, filename) {
   }, 1000);
 }
 
-export async function downloadWithProgress(url, formatId, downloadType, filename, onProgress) {
-  const downloadApiUrl = getDownloadUrl(url, formatId, downloadType, filename);
-  
-  onProgress({ progress: 10, status: 'Connecting to high-speed video server...', bytes: 0, total: 0 });
+// Complete Live Media Stream Resolver & Device Downloader
+export async function resolveAndDownloadMedia({
+  url,
+  formatId = '1080',
+  type = 'video',
+  filename = 'OmniGrab_Video.mp4',
+  onProgress = () => {}
+}) {
+  const isAudio = type === 'audio';
+  let targetFormat = isAudio ? 'mp3' : '1080';
+  if (!isAudio) {
+    if (formatId.includes('720')) targetFormat = '720';
+    else if (formatId.includes('480')) targetFormat = '480';
+    else if (formatId.includes('360')) targetFormat = '360';
+    else targetFormat = '1080';
+  }
 
+  const lower = url.toLowerCase();
+
+  // 1. DIRECT FILE DOWNLOAD
+  if (['.mp4', '.webm', '.mov', '.mkv', '.mp3', '.m4a', '.jpg', '.png'].some(ext => lower.split('?')[0].endsWith(ext))) {
+    onProgress({ progress: 100, status: 'Direct file link ready. Saving to device...' });
+    triggerDirectDownload(url, filename);
+    return { success: true, url };
+  }
+
+  // 2. LOADER CONVERSION PIPELINE (With real-time status)
   try {
-    const response = await fetch(downloadApiUrl);
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(errText || `Server returned status ${response.status}`);
+    onProgress({ progress: 15, status: 'Initializing video stream...' });
+
+    const initRes = await fetch(`${API_BASE}/api/loader-init?format=${targetFormat}&url=${encodeURIComponent(url)}`);
+    if (!initRes.ok) {
+      throw new Error(`Server initialization failed (${initRes.status})`);
     }
 
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('text/html') || contentType.includes('application/json')) {
-      // If server returned an HTML error page or JSON message instead of real binary stream
-      const text = await response.text();
-      try {
-        const parsed = JSON.parse(text);
-        if (parsed.direct_url) {
-          // Direct silent download trigger without popup
-          const a = document.createElement('a');
-          a.href = parsed.direct_url;
-          a.download = filename || 'media_download.mp4';
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => document.body.removeChild(a), 1000);
-          onProgress({ progress: 100, status: 'Direct file download triggered!', bytes: 0, total: 0 });
-          return true;
+    const initData = await initRes.json();
+    if (!initData.id) {
+      throw new Error('Video conversion could not be started');
+    }
+
+    const jobId = initData.id;
+    let attempts = 0;
+    const maxAttempts = 20;
+
+    while (attempts < maxAttempts) {
+      await new Promise(r => setTimeout(r, 1200));
+      attempts++;
+
+      const progRes = await fetch(`${API_BASE}/api/loader-progress?id=${encodeURIComponent(jobId)}`);
+      if (progRes.ok) {
+        const progData = await progRes.json();
+        const currentPct = Math.min(95, 20 + attempts * 6);
+
+        onProgress({
+          progress: currentPct,
+          status: progData.text || `Processing ${isAudio ? 'MP3 Audio' : 'MP4 Video'} (${currentPct}%)...`
+        });
+
+        if (progData.download_url && progData.download_url.startsWith('http')) {
+          onProgress({ progress: 100, status: 'Conversion complete! Saving file to Downloads...' });
+          triggerDirectDownload(progData.download_url, filename);
+          sendLocalNotification('Download Started', `${filename} is downloading to your device.`);
+          return { success: true, downloadUrl: progData.download_url };
         }
-        throw new Error(parsed.detail || parsed.error || 'Server could not stream this video');
-      } catch (e) {
-        throw new Error('Video server returned an invalid response. Please retry in a moment.');
       }
     }
 
-    const contentLength = response.headers.get('content-length');
-    const total = contentLength ? parseInt(contentLength, 10) : 0;
-    
-    if (!response.body) {
-      const blob = await response.blob();
-      if (blob.size < 1000) {
-        throw new Error('Corrupt or empty file received from server.');
-      }
-      triggerBlobDownload(blob, filename || 'omnigrab_download.mp4');
-      onProgress({ progress: 100, status: 'Completed!', bytes: total || blob.size, total: total || blob.size });
-      return true;
-    }
-
-    const reader = response.body.getReader();
-    let receivedBytes = 0;
-    const chunks = [];
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      chunks.push(value);
-      receivedBytes += value.length;
-
-      let pct = total ? Math.round((receivedBytes / total) * 100) : Math.min(95, 10 + Math.round(receivedBytes / 300000));
-      onProgress({
-        progress: pct,
-        status: `Downloading Video... ${formatBytes(receivedBytes)} ${total ? '/ ' + formatBytes(total) : ''}`,
-        bytes: receivedBytes,
-        total: total || receivedBytes
-      });
-    }
-
-    if (receivedBytes < 10000) {
-      throw new Error(`Downloaded file was too small (${receivedBytes} bytes). Video stream was interrupted.`);
-    }
-
-    onProgress({ progress: 98, status: 'Finalizing full video file...', bytes: receivedBytes, total: receivedBytes });
-
-    let mimeType = 'video/mp4';
-    if (downloadType === 'audio') mimeType = 'audio/mpeg';
-    if (filename && filename.endsWith('.zip')) mimeType = 'application/zip';
-    if (filename && filename.endsWith('.jpg')) mimeType = 'image/jpeg';
-    if (filename && filename.endsWith('.png')) mimeType = 'image/png';
-
-    const blob = new Blob(chunks, { type: mimeType });
-    triggerBlobDownload(blob, filename || `omnigrab_${Date.now()}.${downloadType === 'audio' ? 'mp3' : 'mp4'}`);
-
-    onProgress({ progress: 100, status: 'Download Complete & Saved!', bytes: receivedBytes, total: receivedBytes });
-    sendLocalNotification('Download Complete', `${filename || 'Media file'} is ready in your downloads!`);
-
-    return true;
+    // If polling timed out, fallback to direct stream
+    throw new Error('Conversion took longer than expected.');
   } catch (err) {
-    console.error('Download error:', err);
-    throw err;
+    console.warn('Fast pipeline fallback:', err);
+    onProgress({ progress: 80, status: 'Redirecting to direct media stream...' });
+    const fallbackUrl = getDownloadUrl(url, formatId, type, filename);
+    triggerDirectDownload(fallbackUrl, filename);
+    return { success: true, fallback: true };
   }
 }
 

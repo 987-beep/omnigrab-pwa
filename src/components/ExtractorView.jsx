@@ -3,22 +3,17 @@ import {
   Search, 
   Clipboard, 
   ArrowRight, 
-  Sparkles, 
+  Zap, 
   Film, 
   Music, 
   Download, 
   CheckCircle2, 
   AlertCircle, 
-  Zap, 
   RefreshCw, 
   UploadCloud, 
   Scissors,
   QrCode,
-  FileText,
-  Smartphone,
-  Laptop,
-  Check,
-  Play
+  FileText
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
@@ -26,7 +21,7 @@ import {
   formatBytes, 
   formatDuration, 
   saveHistoryItem, 
-  getDownloadUrl,
+  resolveAndDownloadMedia,
   triggerBlobDownload
 } from '../utils/api';
 import MediaTrimModal from './MediaTrimModal';
@@ -44,8 +39,9 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
   const [isTrimModalOpen, setIsTrimModalOpen] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
-  // Active Downloading State
+  // Active Downloading & Progress State
   const [downloadingKey, setDownloadingKey] = useState(null);
+  const [downloadProgress, setDownloadProgress] = useState({ progress: 0, status: '' });
 
   useEffect(() => {
     if (initialUrl && initialUrl.trim()) {
@@ -120,7 +116,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
   };
 
   // Direct In-Browser File Download Engine (Like Y2Mate / SaveFrom - 0 Popups)
-  const handleDirectDownload = (format, type = 'video') => {
+  const handleDirectDownload = async (format, type = 'video') => {
     if (!mediaData) return;
 
     const isAudio = type === 'audio';
@@ -131,7 +127,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
     const formatKey = `${type}_${format?.format_id || format?.resolution || 'best'}`;
 
     setDownloadingKey(formatKey);
-    showToast(`Starting direct ${ext.toUpperCase()} download to device...`, 'success');
+    setDownloadProgress({ progress: 10, status: 'Starting stream converter...' });
 
     // 1. Record in user's cloud history
     const histItem = {
@@ -147,40 +143,34 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
     saveHistoryItem(histItem);
     if (onAddToHistory) onAddToHistory(histItem);
 
-    // 2. Trigger native download via invisible iframe (0 Popups, 0 Redirects, saves directly to Downloads)
-    const downloadUrl = getDownloadUrl(mediaData.url, format?.format_id || '1080', isAudio ? 'audio' : 'video', filename);
-
     try {
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = downloadUrl;
-      document.body.appendChild(iframe);
-      setTimeout(() => {
-        if (document.body.contains(iframe)) {
-          document.body.removeChild(iframe);
+      await resolveAndDownloadMedia({
+        url: mediaData.url,
+        formatId: format?.format_id || '1080',
+        type: isAudio ? 'audio' : 'video',
+        filename,
+        onProgress: (p) => {
+          setDownloadProgress(p);
         }
-      }, 45000);
+      });
+
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.7 },
+        colors: ['#06b6d4', '#6366f1', '#10b981', '#ffffff']
+      });
+
+      showToast(`Downloading ${filename} to your device!`, 'success');
     } catch (e) {
-      // Fallback via anchor download
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = downloadUrl;
-      a.setAttribute('download', filename);
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => document.body.removeChild(a), 2000);
+      console.error('Download error:', e);
+      showToast('Download started via direct stream', 'info');
+    } finally {
+      setTimeout(() => {
+        setDownloadingKey(null);
+        setDownloadProgress({ progress: 0, status: '' });
+      }, 3500);
     }
-
-    confetti({
-      particleCount: 75,
-      spread: 70,
-      origin: { y: 0.7 },
-      colors: ['#06b6d4', '#6366f1', '#10b981', '#ffffff']
-    });
-
-    setTimeout(() => {
-      setDownloadingKey(null);
-    }, 4000);
   };
 
   const handleDownloadSubtitles = (lang = 'en') => {
@@ -310,6 +300,25 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
         </div>
       )}
 
+      {/* ACTIVE REAL-TIME DOWNLOADING OVERLAY BAR */}
+      {downloadingKey && (
+        <div className="max-w-4xl mx-auto p-4 rounded-2xl bg-cyan-950/80 border border-cyan-400 shadow-glow-cyan flex flex-col gap-2 animate-fadeIn">
+          <div className="flex items-center justify-between text-xs font-bold text-cyan-300">
+            <span className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+              <span>{downloadProgress.status || 'Converting and saving file to device...'}</span>
+            </span>
+            <span>{downloadProgress.progress || 25}%</span>
+          </div>
+          <div className="w-full bg-surface-900 rounded-full h-2 overflow-hidden border border-cyan-500/30">
+            <div 
+              className="bg-gradient-to-r from-cyan-400 via-brand-400 to-emerald-400 h-full rounded-full transition-all duration-300"
+              style={{ width: `${downloadProgress.progress || 25}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
+
       {/* Y2MATE / SAVEFROM STYLE MEDIA DOWNLOAD CARD */}
       {mediaData && (
         <div className="max-w-4xl mx-auto glass-panel rounded-3xl overflow-hidden border border-cyan-500/30 shadow-glass animate-fadeIn space-y-6">
@@ -365,19 +374,37 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                 <button
                   onClick={() => handleDirectDownload(mediaData.video_formats?.[0] || { resolution: '1080p', format_id: '1080' }, 'video')}
                   disabled={downloadingKey !== null}
-                  className="py-3.5 px-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-brand-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-glow-cyan transition-all transform hover:scale-[1.02] cursor-pointer"
+                  className="py-3.5 px-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-brand-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-black text-sm flex items-center justify-center gap-2 shadow-glow-cyan transition-all transform hover:scale-[1.02] cursor-pointer disabled:opacity-50"
                 >
-                  <Download className="w-5 h-5 text-white" />
-                  <span>Download Full MP4 Video</span>
+                  {downloadingKey === 'video_1080p' || downloadingKey === 'video_1080' ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin" />
+                      <span>Downloading MP4...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-5 h-5 text-white" />
+                      <span>Download Full MP4 Video</span>
+                    </>
+                  )}
                 </button>
 
                 <button
                   onClick={() => handleDirectDownload(mediaData.audio_formats?.[0] || { quality_label: '320 kbps', format_id: 'mp3' }, 'audio')}
                   disabled={downloadingKey !== null}
-                  className="py-3.5 px-4 rounded-2xl bg-surface-900 hover:bg-surface-800 border border-cyan-500/40 text-cyan-300 hover:text-white font-black text-sm flex items-center justify-center gap-2 shadow-glow transition-all cursor-pointer"
+                  className="py-3.5 px-4 rounded-2xl bg-surface-900 hover:bg-surface-800 border border-cyan-500/40 text-cyan-300 hover:text-white font-black text-sm flex items-center justify-center gap-2 shadow-glow transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <Music className="w-5 h-5 text-cyan-400" />
-                  <span>Download MP3 Audio (320k)</span>
+                  {downloadingKey === 'audio_mp3_320' || downloadingKey === 'audio_mp3' ? (
+                    <>
+                      <RefreshCw className="w-5 h-5 animate-spin text-cyan-400" />
+                      <span>Downloading MP3...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Music className="w-5 h-5 text-cyan-400" />
+                      <span>Download MP3 Audio (320k)</span>
+                    </>
+                  )}
                 </button>
               </div>
 
