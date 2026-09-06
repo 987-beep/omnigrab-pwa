@@ -27,11 +27,12 @@ except Exception as e:
     print("static_ffmpeg init note:", e)
 
 import yt_dlp
+import backend.turso_db as turso
 
 app = FastAPI(
     title="OmniGrab Pro API",
-    description="Universal Video, Photo & Media Extraction Engine",
-    version="2.4.0"
+    description="Universal Video, Photo & Media Extraction Engine with Turso LibSQL Cloud",
+    version="2.5.0"
 )
 
 app.add_middleware(
@@ -69,6 +70,25 @@ class BatchZipRequest(BaseModel):
     items: List[Dict[str, str]]
     zip_name: Optional[str] = "omnigrab_batch.zip"
 
+class CloudHistoryItem(BaseModel):
+    id: Optional[str] = None
+    url: str
+    title: Optional[str] = "Untitled"
+    thumbnail: Optional[str] = None
+    platform: Optional[str] = "Web"
+    quality: Optional[str] = "HD"
+    media_type: Optional[str] = "video"
+    filesize: Optional[str] = None
+    device_source: Optional[str] = "Web PWA"
+
+class BookmarkItem(BaseModel):
+    id: Optional[str] = None
+    url: str
+    title: Optional[str] = "Saved Link"
+    thumbnail: Optional[str] = None
+    platform: Optional[str] = "Web"
+    notes: Optional[str] = ""
+
 def get_platform_info(url: str) -> Dict[str, str]:
     lower = url.lower()
     if "youtube.com" in lower or "youtu.be" in lower:
@@ -101,13 +121,66 @@ def sanitize_filename(title: str) -> str:
 @app.get("/api/health")
 def health_check():
     ffmpeg_path = shutil.which("ffmpeg")
+    turso_status = turso.check_turso_health()
     return {
         "status": "healthy",
         "ytdlp_version": yt_dlp.version.__version__,
         "ffmpeg_detected": bool(ffmpeg_path),
         "ffmpeg_path": ffmpeg_path,
-        "engine": "OmniGrab Pro v2.4"
+        "turso": turso_status,
+        "engine": "OmniGrab Pro v2.5 + Turso LibSQL"
     }
+
+# TURSO CLOUD DATABASE ENDPOINTS
+@app.get("/api/turso/status")
+def get_turso_status():
+    return turso.check_turso_health()
+
+@app.get("/api/turso/history")
+def get_turso_history(limit: int = 50):
+    try:
+        return {"success": True, "history": turso.get_cloud_history(limit)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Turso Error: {str(e)}")
+
+@app.post("/api/turso/history")
+def save_turso_history(item: CloudHistoryItem):
+    try:
+        res = turso.add_cloud_history(item.dict())
+        return {"success": True, "item": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Turso Error: {str(e)}")
+
+@app.delete("/api/turso/history/{item_id}")
+def delete_turso_history(item_id: str):
+    try:
+        turso.delete_cloud_history(item_id)
+        return {"success": True, "deleted": item_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Turso Error: {str(e)}")
+
+@app.get("/api/turso/bookmarks")
+def get_turso_bookmarks():
+    try:
+        return {"success": True, "bookmarks": turso.get_cloud_bookmarks()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Turso Error: {str(e)}")
+
+@app.post("/api/turso/bookmarks")
+def save_turso_bookmark(item: BookmarkItem):
+    try:
+        res = turso.add_cloud_bookmark(item.dict())
+        return {"success": True, "bookmark": res}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Turso Error: {str(e)}")
+
+@app.delete("/api/turso/bookmarks/{item_id}")
+def delete_turso_bookmark(item_id: str):
+    try:
+        turso.delete_cloud_bookmark(item_id)
+        return {"success": True, "deleted": item_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Turso Error: {str(e)}")
 
 @app.post("/api/extract")
 def extract_media(req: ExtractRequest):
@@ -118,7 +191,6 @@ def extract_media(req: ExtractRequest):
     platform = get_platform_info(url)
     clean_url_base = url.split('?')[0].lower()
 
-    # Special handling for direct video file links
     if any(clean_url_base.endswith(ext) for ext in ['.mp4', '.webm', '.mov', '.mkv']):
         filename_guessed = url.split('/')[-1].split('?')[0] or "Direct_Video_Stream.mp4"
         return {
@@ -148,7 +220,6 @@ def extract_media(req: ExtractRequest):
             "direct_url": url
         }
 
-    # Special handling for direct image file links
     if any(clean_url_base.endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
         filename_guessed = url.split('/')[-1].split('?')[0] or "High_Res_Photo.jpg"
         return {
@@ -176,7 +247,6 @@ def extract_media(req: ExtractRequest):
             "direct_url": url
         }
 
-    # Try yt-dlp
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -315,7 +385,6 @@ def extract_media(req: ExtractRequest):
             "direct_url": info.get('url') if not raw_formats else None
         }
 
-    # Fallback to direct page scraping
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
@@ -394,7 +463,7 @@ def extract_media(req: ExtractRequest):
     except Exception as scrape_err:
         raise HTTPException(
             status_code=400,
-            detail=f"Could not extract media. yt-dlp note: {ytdl_error}. Scraper note: {str(scrape_err)}"
+            detail=f"Could not extract media: {str(scrape_err)}"
         )
 
 @app.get("/api/download")
@@ -691,7 +760,6 @@ def download_extension_zip(background_tasks: BackgroundTasks):
         }
     )
 
-# Mount static dist directory if built
 dist_dir = Path("/home/user/dist")
 if dist_dir.exists():
     app.mount("/assets", StaticFiles(directory=str(dist_dir / "assets")), name="assets")

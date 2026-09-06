@@ -1,4 +1,47 @@
-// OmniGrab Chrome Extension - Background Service Worker v2.5.0
+// OmniGrab Chrome Extension - Background Service Worker v2.5.0 with Turso Cloud Sync
+
+const TURSO_DB_URL = "https://webextention-axuile.aws-ap-south-1.turso.io/v2/pipeline";
+const TURSO_AUTH_TOKEN = "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODg2Nzk0MzQsImlkIjoiMDFhMDc1OWEtMWQwMS03MTExLTlmOTItMDdiZjUxOTA4MzNjIiwia2lkIjoiZ3BKaE53cTF1TmQ5Z2Jjek9MOVZjaEQ4QTdxVzd4OTNoNWNWbkJObTJRdyIsInJpZCI6IjY0YzZjZjEwLThhZDgtNGM2Ni05MzA3LTkyY2NlMDU4YWJiYSJ9.f0GvIrNC5hQUTVOK3BLg0OEQ4otRHKHhyZip--7YyKRyOa4NorYQg6KfB4M9HDDI2ejP0KOlgxzmRgU75MnEBw";
+
+async function syncToTurso(item) {
+  try {
+    const sql = `
+      INSERT INTO downloads_history (id, url, title, thumbnail, platform, quality, media_type, filesize, device_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const itemId = `ext_${Date.now()}`;
+    const payload = {
+      requests: [{
+        type: 'execute',
+        stmt: {
+          sql: sql.trim(),
+          args: [
+            { type: 'text', value: itemId },
+            { type: 'text', value: item.url || '' },
+            { type: 'text', value: item.title || 'Chrome Download' },
+            { type: 'text', value: item.thumbnail || '' },
+            { type: 'text', value: 'Chrome Ext' },
+            { type: 'text', value: '1080p HD' },
+            { type: 'text', value: item.mediaType === 'Video' ? 'video' : 'photo' },
+            { type: 'text', value: 'Direct Stream' },
+            { type: 'text', value: 'Chrome Extension' }
+          ]
+        }
+      }]
+    };
+
+    await fetch(TURSO_DB_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${TURSO_AUTH_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (e) {
+    console.log('Turso background sync note:', e);
+  }
+}
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
@@ -36,7 +79,6 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   });
 });
 
-// Keyboard Shortcut commands listener
 chrome.commands.onCommand.addListener((command) => {
   if (command === 'download_active_video') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -48,6 +90,7 @@ chrome.commands.onCommand.addListener((command) => {
               url: firstVideo.url,
               filename: `OmniGrab_${Date.now()}.${firstVideo.type === 'video' ? 'mp4' : 'jpg'}`
             });
+            syncToTurso({ url: firstVideo.url, title: firstVideo.title, mediaType: 'Video' });
           }
         });
       }
@@ -57,7 +100,7 @@ chrome.commands.onCommand.addListener((command) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'download_media') {
-    const { url, mediaType } = request;
+    const { url, mediaType, pageUrl } = request;
 
     chrome.downloads.download({
       url: url,
@@ -67,6 +110,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (chrome.runtime.lastError) {
         sendResponse({ success: false, error: chrome.runtime.lastError.message });
       } else {
+        syncToTurso({ url, mediaType, title: `Media from ${pageUrl || 'webpage'}` });
         sendResponse({ success: true, downloadId });
       }
     });

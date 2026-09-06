@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Download, 
   Sparkles, 
@@ -8,12 +8,14 @@ import {
   Smartphone, 
   Clock, 
   Server, 
+  Database,
   CheckCircle2, 
   AlertCircle,
   Share2,
   ExternalLink,
   Menu,
-  X
+  X,
+  Cloud
 } from 'lucide-react';
 
 export default function Header({ activeTab, setActiveTab, backendStatus, installPrompt, triggerInstall }) {
@@ -24,9 +26,11 @@ export default function Header({ activeTab, setActiveTab, backendStatus, install
     { id: 'scraper', label: 'Photo & Asset Scraper', icon: ImageIcon, badge: 'Batch ZIP' },
     { id: 'extension', label: 'Chrome Extension', icon: Puzzle, badge: 'V3 Ready' },
     { id: 'android', label: 'Android PWA & Share', icon: Smartphone, badge: 'Background' },
-    { id: 'history', label: 'Downloads & Queue', icon: Clock, badge: null },
+    { id: 'history', label: 'Turso Cloud & Queue', icon: Cloud, badge: 'Synced' },
     { id: 'deploy', label: 'Deploy & API', icon: Server, badge: 'Vercel / Git' },
   ];
+
+  const tursoConnected = backendStatus?.turso?.status === 'connected';
 
   return (
     <header className="sticky top-0 z-50 glass-panel border-b border-white/10 backdrop-blur-xl">
@@ -53,7 +57,7 @@ export default function Header({ activeTab, setActiveTab, backendStatus, install
                   OMNIGRAB<span className="text-cyan-400 ml-1">PRO</span>
                 </span>
                 <span className="px-2 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md bg-brand-500/20 text-brand-300 border border-brand-500/30">
-                  PWA & EXT
+                  TURSO DB
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-medium hidden sm:block">
@@ -91,24 +95,24 @@ export default function Header({ activeTab, setActiveTab, backendStatus, install
             })}
           </nav>
 
-          {/* Action Buttons & Status */}
-          <div className="flex items-center gap-3">
-            {/* Backend Engine Status Pill */}
+          {/* Status Indicators */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Turso Cloud Status Badge */}
             <div 
-              className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
-                backendStatus?.status === 'healthy'
+              className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
+                tursoConnected
                   ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-400'
                   : 'bg-amber-950/40 border-amber-500/30 text-amber-400'
               }`}
-              title={backendStatus?.status === 'healthy' ? `yt-dlp v${backendStatus.ytdlp_version} + FFmpeg ready` : 'Connecting to extraction engine...'}
+              title={`Turso LibSQL Cloud DB (${backendStatus?.turso?.provider || 'AWS ap-south-1'})`}
             >
-              <span className={`w-2 h-2 rounded-full ${backendStatus?.status === 'healthy' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
+              <Database className="w-3.5 h-3.5 text-cyan-400" />
               <span className="font-mono text-[11px]">
-                {backendStatus?.status === 'healthy' ? 'Engine: Ready' : 'Engine: Standby'}
+                {tursoConnected ? 'Turso: Synced' : 'Turso: Standby'}
               </span>
             </div>
 
-            {/* PWA Install Button if available */}
+            {/* PWA Install Button */}
             {installPrompt && (
               <button
                 onClick={triggerInstall}

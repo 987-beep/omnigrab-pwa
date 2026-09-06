@@ -1,6 +1,6 @@
-// API & Utilities Client for OmniGrab Pro
+// API & Utilities Client for OmniGrab Pro with Turso Cloud LibSQL Integration
 
-const API_BASE = ''; // Uses relative /api which Vite/Vercel proxies to backend
+const API_BASE = '';
 
 export async function checkBackendHealth() {
   try {
@@ -11,6 +11,98 @@ export async function checkBackendHealth() {
     return { status: 'offline' };
   } catch (err) {
     return { status: 'offline', error: err.message };
+  }
+}
+
+// TURSO CLOUD DATABASE API CALLS
+export async function fetchTursoStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/api/turso/status`);
+    if (res.ok) return await res.json();
+    return { status: 'error' };
+  } catch (e) {
+    return { status: 'error', error: e.message };
+  }
+}
+
+export async function fetchTursoHistory() {
+  try {
+    const res = await fetch(`${API_BASE}/api/turso/history`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.history || [];
+    }
+    return [];
+  } catch (e) {
+    console.error('Turso history fetch note:', e);
+    return [];
+  }
+}
+
+export async function syncDownloadToTurso(item) {
+  try {
+    const payload = {
+      url: item.url,
+      title: item.title,
+      thumbnail: item.thumbnail,
+      platform: item.platform || 'Web',
+      quality: item.quality || 'HD',
+      media_type: item.type || 'video',
+      filesize: item.size || 'Unknown',
+      device_source: navigator.userAgent.includes('Android') ? 'Android PWA' : 'Desktop Web'
+    };
+
+    const res = await fetch(`${API_BASE}/api/turso/history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.error('Turso sync note:', e);
+  }
+}
+
+export async function deleteTursoHistory(id) {
+  try {
+    await fetch(`${API_BASE}/api/turso/history/${id}`, { method: 'DELETE' });
+  } catch (e) {
+    console.error('Turso delete note:', e);
+  }
+}
+
+export async function fetchTursoBookmarks() {
+  try {
+    const res = await fetch(`${API_BASE}/api/turso/bookmarks`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.bookmarks || [];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+export async function addTursoBookmark(item) {
+  try {
+    const res = await fetch(`${API_BASE}/api/turso/bookmarks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    return await res.json();
+  } catch (e) {
+    console.error('Turso bookmark note:', e);
+  }
+}
+
+export async function deleteTursoBookmark(id) {
+  try {
+    await fetch(`${API_BASE}/api/turso/bookmarks/${id}`, { method: 'DELETE' });
+  } catch (e) {
+    console.error('Turso bookmark delete note:', e);
   }
 }
 
@@ -97,7 +189,6 @@ export async function downloadWithProgress(url, formatId, downloadType, filename
     const contentLength = response.headers.get('content-length');
     const total = contentLength ? parseInt(contentLength, 10) : 0;
     
-    // Check if browser supports readable stream
     if (!response.body) {
       const blob = await response.blob();
       triggerBlobDownload(blob, filename || 'omnigrab_download.mp4');
@@ -127,7 +218,6 @@ export async function downloadWithProgress(url, formatId, downloadType, filename
 
     onProgress({ progress: 98, status: 'Finalizing file packaging...', bytes: receivedBytes, total: receivedBytes });
 
-    // Determine mime
     let mimeType = 'video/mp4';
     if (downloadType === 'audio') mimeType = 'audio/mpeg';
     if (filename && filename.endsWith('.zip')) mimeType = 'application/zip';
@@ -139,7 +229,6 @@ export async function downloadWithProgress(url, formatId, downloadType, filename
 
     onProgress({ progress: 100, status: 'Download Complete & Saved!', bytes: receivedBytes, total: receivedBytes });
 
-    // Send push notification if permitted
     sendLocalNotification('Download Complete', `${filename || 'Media file'} is ready in your downloads!`);
 
     return true;
@@ -187,7 +276,6 @@ export function sendLocalNotification(title, body) {
   }
 }
 
-// LocalStorage Download History Management
 const HISTORY_KEY = 'omnigrab_download_history_v2';
 
 export function getHistory() {
@@ -209,6 +297,10 @@ export function saveHistoryItem(item) {
     };
     const updated = [newItem, ...history.filter(h => h.url !== item.url || h.title !== item.title)].slice(0, 100);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+
+    // Automatically sync to Turso Cloud DB in background
+    syncDownloadToTurso(newItem);
+
     return updated;
   } catch (e) {
     console.error('Failed to save history:', e);
@@ -218,4 +310,5 @@ export function saveHistoryItem(item) {
 
 export function clearHistory() {
   localStorage.removeItem(HISTORY_KEY);
+  deleteTursoHistory('all');
 }
