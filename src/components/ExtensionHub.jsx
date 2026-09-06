@@ -18,22 +18,30 @@ import {
   FileText,
   Image as ImageIcon,
   Check,
-  Smartphone
+  Smartphone,
+  RefreshCw
 } from 'lucide-react';
 
-export default function ExtensionHub({ showToast }) {
+export default function ExtensionHub({ 
+  showToast, 
+  isExtensionLinked, 
+  onMarkExtensionPaired, 
+  onOpenCompanionModal 
+}) {
   const [copiedKey, setCopiedKey] = useState(null);
   const [activeDemoTab, setActiveDemoTab] = useState('youtube');
   const [downloadingZip, setDownloadingZip] = useState(false);
-  const [extensionDetected, setExtensionDetected] = useState(false);
+  const [extensionDetected, setExtensionDetected] = useState(isExtensionLinked || false);
   const [extVersion, setExtVersion] = useState('2.5.0');
   const [activeStoreTab, setActiveStoreTab] = useState('checklist'); // checklist, assets, permissions
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     // Check if extension content script injected presence
     const handleMessage = (e) => {
       if (e.data && e.data.type === 'OMNIGRAB_EXTENSION_READY') {
         setExtensionDetected(true);
+        if (onMarkExtensionPaired) onMarkExtensionPaired(true);
         if (e.data.version) setExtVersion(e.data.version);
       }
     };
@@ -43,10 +51,11 @@ export default function ExtensionHub({ showToast }) {
     // Initial attribute check
     if (document.documentElement.getAttribute('data-omnigrab-extension-active') === 'true') {
       setExtensionDetected(true);
+      if (onMarkExtensionPaired) onMarkExtensionPaired(true);
     }
 
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [onMarkExtensionPaired]);
 
   const handleDownloadExtension = async () => {
     setDownloadingZip(true);
@@ -63,11 +72,26 @@ export default function ExtensionHub({ showToast }) {
       a.remove();
       window.URL.revokeObjectURL(url);
       showToast('Downloaded OmniGrab Chrome Extension (Manifest V3)!', 'success');
-    } catch (e) {
+    } catch {
       showToast('Failed to download extension package', 'error');
     } finally {
       setDownloadingZip(false);
     }
+  };
+
+  const handleVerifyBridge = () => {
+    setVerifying(true);
+    setTimeout(() => {
+      const active = document.documentElement.getAttribute('data-omnigrab-extension-active') === 'true';
+      if (active || isExtensionLinked) {
+        setExtensionDetected(true);
+        if (onMarkExtensionPaired) onMarkExtensionPaired(true);
+        showToast('🟢 Companion Extension Bridge is Active & Synced!', 'success');
+      } else {
+        showToast('Bridge not responding. Unpack the zip in chrome://extensions with Developer Mode ON.', 'info');
+      }
+      setVerifying(false);
+    }, 600);
   };
 
   const copyText = (key, text) => {
@@ -102,42 +126,53 @@ export default function ExtensionHub({ showToast }) {
       </div>
 
       {/* Extension Live Connection Banner */}
-      <div className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-center justify-between gap-4 ${
-        extensionDetected
+      <div className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col sm:flex-row items-center justify-between gap-4 ${
+        extensionDetected || isExtensionLinked
           ? 'bg-emerald-950/40 border-emerald-500/40 shadow-glow-emerald text-emerald-200'
-          : 'bg-surface-900/60 border-white/10 text-slate-300'
+          : 'bg-surface-900/80 border-amber-500/30 text-slate-300'
       }`}>
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-            extensionDetected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-surface-800 text-slate-400'
+            extensionDetected || isExtensionLinked ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'
           }`}>
-            <Zap className={`w-5 h-5 ${extensionDetected ? 'animate-pulse' : ''}`} />
+            <Zap className={`w-5 h-5 ${(extensionDetected || isExtensionLinked) ? 'animate-pulse' : ''}`} />
           </div>
           <div>
             <p className="text-sm font-bold text-white flex items-center gap-2">
-              <span>{extensionDetected ? '🟢 Chrome Extension Bridge: Connected & Synced' : '⚪ Chrome Extension Bridge: Standby'}</span>
-              {extensionDetected && (
+              <span>{(extensionDetected || isExtensionLinked) ? '🟢 Chrome Extension Bridge: Paired & Active' : '⚡ Setup Companion Extension (Step 2)'}</span>
+              {(extensionDetected || isExtensionLinked) && (
                 <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">
                   v{extVersion}
                 </span>
               )}
             </p>
             <p className="text-xs text-slate-400">
-              {extensionDetected 
-                ? 'Your browser has OmniGrab extension installed. On-page downloads and context menus are live!'
-                : 'Install the extension below or unpack in chrome://extensions to enable 1-click on-page download pills.'}
+              {(extensionDetected || isExtensionLinked)
+                ? 'Your browser has the OmniGrab extension paired. 1-click video hover grabbers and Turso cloud sync are live!'
+                : 'Every PWA installation requires pairing with this companion extension to enable on-page sniffing.'}
             </p>
           </div>
         </div>
 
-        <button
-          onClick={handleDownloadExtension}
-          disabled={downloadingZip}
-          className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-glow flex-shrink-0"
-        >
-          <FolderArchive className="w-4 h-4" />
-          <span>{downloadingZip ? 'Packing...' : 'Get Extension (.ZIP)'}</span>
-        </button>
+        <div className="flex items-center gap-2 flex-shrink-0 w-full sm:w-auto justify-end">
+          <button
+            onClick={handleVerifyBridge}
+            disabled={verifying}
+            className="px-3.5 py-2 rounded-xl bg-surface-900 hover:bg-surface-800 border border-white/10 text-slate-300 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${verifying ? 'animate-spin' : ''}`} />
+            <span>Verify</span>
+          </button>
+
+          <button
+            onClick={handleDownloadExtension}
+            disabled={downloadingZip}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-glow"
+          >
+            <FolderArchive className="w-4 h-4" />
+            <span>{downloadingZip ? 'Packing...' : 'Get Extension (.ZIP)'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Download Extension Card */}
@@ -191,9 +226,17 @@ export default function ExtensionHub({ showToast }) {
               <FolderArchive className="w-6 h-6 text-cyan-300" />
               <span>{downloadingZip ? 'Packing Extension...' : 'Download Extension (.ZIP)'}</span>
             </button>
-            <p className="text-[11px] text-slate-400 text-center font-mono">
-              Ready to unpack & load in chrome://extensions
-            </p>
+            
+            <button
+              onClick={() => {
+                if (onMarkExtensionPaired) onMarkExtensionPaired(true);
+                setExtensionDetected(true);
+                showToast('Marked as Paired & Linked!', 'success');
+              }}
+              className="text-xs font-bold text-cyan-400 hover:text-cyan-300 underline"
+            >
+              Mark Companion as Paired
+            </button>
           </div>
 
         </div>

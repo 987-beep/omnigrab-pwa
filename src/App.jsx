@@ -8,6 +8,8 @@ import HistoryQueue from './components/HistoryQueue';
 import DeploymentGuide from './components/DeploymentGuide';
 import MediaLightbox from './components/MediaLightbox';
 import Toast from './components/Toast';
+import CompanionSetupModal from './components/CompanionSetupModal';
+import CompanionBanner from './components/CompanionBanner';
 import { checkBackendHealth, getHistory } from './utils/api';
 import { 
   Download, 
@@ -22,6 +24,7 @@ import {
   Zap,
   Globe
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('extract'); // extract, scraper, extension, android, history, deploy
@@ -31,6 +34,12 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [lightboxData, setLightboxData] = useState(null);
   const [initialUrl, setInitialUrl] = useState('');
+  
+  // Companion Extension Pairing State
+  const [isExtensionLinked, setIsExtensionLinked] = useState(() => {
+    return localStorage.getItem('omnigrab_extension_paired') === 'true';
+  });
+  const [isCompanionModalOpen, setIsCompanionModalOpen] = useState(false);
 
   // Handle URL query parameters (Android Share Target or Chrome Extension redirects)
   useEffect(() => {
@@ -70,21 +79,66 @@ export default function App() {
       setInstallPrompt(e);
     };
 
+    // When PWA is installed on any device: Trigger the Companion Extension setup prompt!
+    const handleAppInstalled = () => {
+      showToast('🎉 OmniGrab PWA Installed! Please link your Chrome Companion Extension.', 'success');
+      confetti({ particleCount: 80, spread: 80 });
+      // Open companion setup modal to complete dual setup
+      setTimeout(() => {
+        setIsCompanionModalOpen(true);
+      }, 1000);
+    };
+
+    // Extension bridge message listener
+    const handleMessage = (e) => {
+      if (e.data && e.data.type === 'OMNIGRAB_EXTENSION_READY') {
+        setIsExtensionLinked(true);
+        localStorage.setItem('omnigrab_extension_paired', 'true');
+      }
+    };
+
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+    window.addEventListener('message', handleMessage);
+
+    // Initial DOM attribute check for extension
+    if (document.documentElement.getAttribute('data-omnigrab-extension-active') === 'true') {
+      setIsExtensionLinked(true);
+      localStorage.setItem('omnigrab_extension_paired', 'true');
+    }
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      window.removeEventListener('message', handleMessage);
     };
   }, []);
 
   const triggerInstall = async () => {
-    if (!installPrompt) return;
+    if (!installPrompt) {
+      // If installPrompt isn't available (already standalone or manual install), prompt companion setup
+      setIsCompanionModalOpen(true);
+      return;
+    }
     installPrompt.prompt();
     const { outcome } = await installPrompt.userChoice;
     if (outcome === 'accepted') {
-      showToast('OmniGrab PWA installed successfully!', 'success');
+      showToast('OmniGrab PWA installed! Next step: Pair Companion Extension.', 'success');
+      confetti({ particleCount: 70, spread: 70 });
+      setTimeout(() => {
+        setIsCompanionModalOpen(true);
+      }, 1000);
     }
     setInstallPrompt(null);
+  };
+
+  const handleMarkExtensionPaired = (paired) => {
+    setIsExtensionLinked(paired);
+    if (paired) {
+      localStorage.setItem('omnigrab_extension_paired', 'true');
+    } else {
+      localStorage.removeItem('omnigrab_extension_paired');
+    }
   };
 
   const showToast = (message, type = 'info') => {
@@ -117,16 +171,28 @@ export default function App() {
         backendStatus={backendStatus}
         installPrompt={installPrompt}
         triggerInstall={triggerInstall}
+        isExtensionLinked={isExtensionLinked}
+        onOpenCompanionModal={() => setIsCompanionModalOpen(true)}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* Companion Extension Pairing Status Banner */}
+        <CompanionBanner
+          isExtensionLinked={isExtensionLinked}
+          onOpenCompanionModal={() => setIsCompanionModalOpen(true)}
+          onOpenExtensionTab={() => setActiveTab('extension')}
+        />
+
         {activeTab === 'extract' && (
           <ExtractorView
             initialUrl={initialUrl}
             onAddToHistory={handleAddToHistory}
             showToast={showToast}
             onOpenLightbox={(src, title) => setLightboxData({ src, title })}
+            onOpenCompanionModal={() => setIsCompanionModalOpen(true)}
+            isExtensionLinked={isExtensionLinked}
           />
         )}
 
@@ -140,6 +206,9 @@ export default function App() {
         {activeTab === 'extension' && (
           <ExtensionHub
             showToast={showToast}
+            isExtensionLinked={isExtensionLinked}
+            onMarkExtensionPaired={handleMarkExtensionPaired}
+            onOpenCompanionModal={() => setIsCompanionModalOpen(true)}
           />
         )}
 
@@ -148,6 +217,8 @@ export default function App() {
             installPrompt={installPrompt}
             triggerInstall={triggerInstall}
             showToast={showToast}
+            isExtensionLinked={isExtensionLinked}
+            onOpenCompanionModal={() => setIsCompanionModalOpen(true)}
           />
         )}
 
@@ -204,6 +275,10 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <button onClick={() => setIsCompanionModalOpen(true)} className="hover:text-cyan-300 transition-colors flex items-center gap-1">
+              <Puzzle className="w-3.5 h-3.5 text-brand-400" />
+              <span>Companion Setup</span>
+            </button>
             <button onClick={() => setActiveTab('android')} className="hover:text-cyan-300 transition-colors flex items-center gap-1">
               <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
               <span>Android PWA</span>
@@ -219,6 +294,15 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Companion Extension Setup Modal */}
+      <CompanionSetupModal
+        isOpen={isCompanionModalOpen}
+        onClose={() => setIsCompanionModalOpen(false)}
+        isExtensionLinked={isExtensionLinked}
+        onMarkExtensionPaired={handleMarkExtensionPaired}
+        showToast={showToast}
+      />
 
       {/* Toast Notification */}
       <Toast toast={toast} onClose={() => setToast(null)} />

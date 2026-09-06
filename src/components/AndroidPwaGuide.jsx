@@ -11,14 +11,45 @@ import {
   WifiOff, 
   ArrowRight,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Puzzle,
+  Laptop,
+  FolderArchive
 } from 'lucide-react';
 import { sendLocalNotification } from '../utils/api';
 import confetti from 'canvas-confetti';
 
-export default function AndroidPwaGuide({ installPrompt, triggerInstall, showToast }) {
+export default function AndroidPwaGuide({ 
+  installPrompt, 
+  triggerInstall, 
+  showToast,
+  isExtensionLinked,
+  onOpenCompanionModal 
+}) {
   const [notificationState, setNotificationState] = useState('default');
-  const [testSharedUrl, setTestSharedUrl] = useState('https://www.youtube.com/watch?v=aqz-KE-bpKQ');
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
+  const handleDownloadExtension = async () => {
+    setDownloadingZip(true);
+    try {
+      const resp = await fetch('/api/download-extension');
+      if (!resp.ok) throw new Error('Could not download extension zip');
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'OmniGrab_Chrome_Extension_V3.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      if (showToast) showToast('Downloaded OmniGrab Chrome Extension (Manifest V3)!', 'success');
+    } catch {
+      if (showToast) showToast('Failed to download extension package', 'error');
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
 
   const handleRequestNotification = async () => {
     if (!('Notification' in window)) {
@@ -60,70 +91,89 @@ export default function AndroidPwaGuide({ installPrompt, triggerInstall, showToa
       <div className="text-center max-w-3xl mx-auto py-4">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/30 text-cyan-300 text-xs font-bold uppercase tracking-wider mb-3 shadow-glow">
           <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Android PWA & Web Share Target</span>
+          <span>Android PWA & Chrome Companion Architecture</span>
         </div>
         <h2 className="text-3xl sm:text-4xl font-black text-white">
-          Direct <span className="bg-gradient-to-r from-cyan-400 via-brand-400 to-emerald-400 bg-clip-text text-transparent">Android System Share</span> & Background Downloads
+          Dual Setup: <span className="bg-gradient-to-r from-cyan-400 via-brand-400 to-emerald-400 bg-clip-text text-transparent">PWA App + Chrome Extension</span>
         </h2>
         <p className="mt-2 text-slate-400 text-sm">
-          Install OmniGrab directly to your home screen to enable 1-tap sharing from any Android app, offline caching, and background task processing.
+          Every device downloading the PWA should pair with the Chrome Extension companion for full 1-click on-page video grabbing and cross-device Turso LibSQL cloud synchronization.
         </p>
       </div>
 
-      {/* PWA Install Action Card */}
-      <div className="glass-panel-elevated p-6 sm:p-8 rounded-3xl border border-cyan-500/30 shadow-glow-cyan relative overflow-hidden">
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+      {/* DUAL SETUP 2-STEP ONBOARDING CARD */}
+      <div className="glass-panel-elevated p-6 sm:p-8 rounded-3xl border border-cyan-500/40 shadow-glow relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
           
-          <div className="space-y-3 max-w-xl">
+          <div className="space-y-4 max-w-xl">
             <div className="flex items-center gap-2">
               <span className="px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-black uppercase">
-                Progressive Web App
+                Dual Ecosystem
               </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-mono font-bold">
-                Android Ready
+              <span className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold ${
+                isExtensionLinked ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+              }`}>
+                {isExtensionLinked ? '🟢 2/2 Steps Completed' : '⚡ Step 2 Required'}
               </span>
             </div>
 
             <h3 className="text-2xl font-black text-white">
-              Install OmniGrab Pro on Android / Desktop
+              Install PWA & Pair Companion Extension
             </h3>
 
             <p className="text-slate-300 text-sm leading-relaxed">
-              Functions like a native Android APK: runs fullscreen without address bars, integrates with the system share sheet, and syncs downloads in the background.
+              When you download the PWA on your mobile phone or laptop, make sure to also set up the Chrome Companion Extension. The PWA provides offline background queuing and mobile share sheet integration, while the Extension provides 1-click video sniffing on all websites.
             </p>
 
-            <div className="flex items-center gap-4 text-xs text-slate-400 pt-2">
-              <span className="flex items-center gap-1 text-emerald-400 font-bold">
-                <CheckCircle2 className="w-4 h-4" /> 0MB Storage Overhead
-              </span>
-              <span className="flex items-center gap-1 text-cyan-400 font-bold">
-                <CheckCircle2 className="w-4 h-4" /> Auto-Updates
-              </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs">
+              <div className="p-3 rounded-xl bg-surface-950/70 border border-emerald-500/30 flex items-start gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-white">Step 1: Install PWA</p>
+                  <p className="text-[11px] text-slate-400">Mobile Share Sheet & Offline Cache</p>
+                </div>
+              </div>
+
+              <div className={`p-3 rounded-xl border flex items-start gap-2.5 ${
+                isExtensionLinked 
+                  ? 'bg-surface-950/70 border-emerald-500/30' 
+                  : 'bg-brand-950/60 border-brand-500/40'
+              }`}>
+                <Puzzle className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-white">Step 2: Chrome Extension</p>
+                  <p className="text-[11px] text-slate-400">On-Page Hover Badges & Alt+D</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="flex flex-col items-center gap-3 w-full md:w-auto">
+          <div className="flex flex-col items-center gap-3 w-full lg:w-auto">
             {installPrompt ? (
               <button
                 onClick={triggerInstall}
-                className="btn-primary-gradient w-full sm:w-auto px-8 py-5 rounded-2xl text-white font-black text-base flex items-center justify-center gap-3 shadow-glow cursor-pointer"
+                className="btn-primary-gradient w-full sm:w-auto px-8 py-4 rounded-2xl text-white font-black text-sm flex items-center justify-center gap-3 shadow-glow cursor-pointer"
               >
-                <Download className="w-5 h-5 text-cyan-300" />
-                <span>Install OmniGrab App</span>
+                <Smartphone className="w-5 h-5 text-cyan-300" />
+                <span>1. Install OmniGrab PWA</span>
               </button>
             ) : (
               <button
-                onClick={() => showToast('In Android Chrome: Tap 3 dots (⋮) -> "Add to Home screen" or "Install app"', 'info')}
-                className="btn-primary-gradient w-full sm:w-auto px-8 py-5 rounded-2xl text-white font-black text-base flex items-center justify-center gap-3 shadow-glow cursor-pointer"
+                onClick={() => showToast('PWA is installed or accessible directly in fullscreen mode', 'info')}
+                className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-surface-900 border border-emerald-500/30 text-emerald-300 font-black text-sm flex items-center justify-center gap-3 shadow-glow"
               >
-                <Smartphone className="w-5 h-5 text-cyan-300" />
-                <span>Install via Chrome Menu (⋮)</span>
+                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                <span>1. PWA Installed / Active</span>
               </button>
             )}
 
-            <p className="text-[11px] text-slate-400 font-mono">
-              Chrome, Edge, Samsung Internet, Firefox
-            </p>
+            <button
+              onClick={onOpenCompanionModal || handleDownloadExtension}
+              className="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-brand-600 via-indigo-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white font-black text-sm flex items-center justify-center gap-3 shadow-glow cursor-pointer transition-transform hover:scale-105"
+            >
+              <Puzzle className="w-5 h-5 text-cyan-300" />
+              <span>2. Setup Companion Extension</span>
+            </button>
           </div>
 
         </div>

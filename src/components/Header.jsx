@@ -15,10 +15,19 @@ import {
   ExternalLink,
   Menu,
   X,
-  Cloud
+  Cloud,
+  Zap
 } from 'lucide-react';
 
-export default function Header({ activeTab, setActiveTab, backendStatus, installPrompt, triggerInstall }) {
+export default function Header({ 
+  activeTab, 
+  setActiveTab, 
+  backendStatus, 
+  installPrompt, 
+  triggerInstall,
+  isExtensionLinked,
+  onOpenCompanionModal 
+}) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const tabs = [
@@ -97,6 +106,23 @@ export default function Header({ activeTab, setActiveTab, backendStatus, install
 
           {/* Status Indicators */}
           <div className="flex items-center gap-2 sm:gap-3">
+            
+            {/* Companion Extension Pairing Status Pill */}
+            <button
+              onClick={onOpenCompanionModal}
+              className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                isExtensionLinked
+                  ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:bg-emerald-900/40'
+                  : 'bg-gradient-to-r from-brand-900/80 to-amber-950/80 border-amber-500/40 text-amber-300 shadow-glow hover:scale-105'
+              }`}
+              title="Click to view Companion Extension Setup and Status"
+            >
+              <Puzzle className={`w-3.5 h-3.5 ${isExtensionLinked ? 'text-emerald-400' : 'text-amber-400 animate-spin'}`} />
+              <span className="font-mono text-[11px]">
+                {isExtensionLinked ? 'Extension: Paired' : 'Setup Extension (Step 2)'}
+              </span>
+            </button>
+
             {/* Turso Cloud Status Badge */}
             <div 
               className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold ${
@@ -164,6 +190,25 @@ export default function Header({ activeTab, setActiveTab, backendStatus, install
                 </button>
               );
             })}
+
+            {/* Mobile Companion Setup Button */}
+            <button
+              onClick={() => {
+                onOpenCompanionModal();
+                setMobileMenuOpen(false);
+              }}
+              className="col-span-2 flex items-center justify-between p-3 rounded-xl bg-brand-950/80 border border-brand-500/40 text-cyan-200 font-bold text-xs"
+            >
+              <div className="flex items-center gap-2">
+                <Puzzle className="w-4 h-4 text-cyan-400" />
+                <span>Companion Chrome Extension</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                isExtensionLinked ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300'
+              }`}>
+                {isExtensionLinked ? 'Paired' : 'Setup Required'}
+              </span>
+            </button>
             
             {installPrompt && (
               <button
