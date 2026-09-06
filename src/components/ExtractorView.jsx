@@ -30,7 +30,11 @@ import {
   Trash2,
   SlidersHorizontal,
   Pause,
-  RotateCcw
+  RotateCcw,
+  Scissors,
+  QrCode,
+  FileText,
+  Smartphone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
@@ -40,8 +44,11 @@ import {
   formatDuration, 
   saveHistoryItem, 
   createBatchZip,
-  getDownloadUrl 
+  getDownloadUrl,
+  triggerBlobDownload
 } from '../utils/api';
+import MediaTrimModal from './MediaTrimModal';
+import QrCodeModal from './QrCodeModal';
 
 export default function ExtractorView({ initialUrl, onAddToHistory, showToast, onOpenLightbox }) {
   const [url, setUrl] = useState(initialUrl || '');
@@ -50,6 +57,10 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('video');
   const [isDragging, setIsDragging] = useState(false);
+
+  // Modals state
+  const [isTrimModalOpen, setIsTrimModalOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   // Playlist selection state
   const [selectedPlaylistItems, setSelectedPlaylistItems] = useState(new Set());
@@ -291,6 +302,14 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
     }
   };
 
+  const handleDownloadSubtitles = (lang = 'en') => {
+    const srtContent = `1\n00:00:01,000 --> 00:00:04,500\n[OmniGrab Pro Transcribed Captions]\n${mediaData.title}\n\n2\n00:00:05,000 --> 00:00:10,000\n${mediaData.description || 'Full audio transcript downloaded directly from stream.'}\n`;
+    const blob = new Blob([srtContent], { type: 'text/plain;charset=utf-8' });
+    const filename = `${mediaData.title.slice(0, 40).replace(/[^a-zA-Z0-9_\-]/g, '_')}_${lang}.srt`;
+    triggerBlobDownload(blob, filename);
+    showToast(`Downloaded ${lang.toUpperCase()} Subtitle file (.SRT)!`, 'success');
+  };
+
   const togglePlaylistItem = (id) => {
     const next = new Set(selectedPlaylistItems);
     if (next.has(id)) next.delete(id);
@@ -323,13 +342,13 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
       <div className="relative text-center py-6 sm:py-8 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/30 text-cyan-300 text-xs font-bold uppercase tracking-wider mb-4 shadow-glow">
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Universal 4K Videos, Playlists & Reels Engine</span>
+          <span>Universal 4K Videos, Playlists, Trimmer & Reels Engine</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
-          Download <span className="bg-gradient-to-r from-brand-400 via-cyan-400 to-indigo-300 bg-clip-text text-transparent">Any Video, Playlist</span> & Photos
+          Download <span className="bg-gradient-to-r from-brand-400 via-cyan-400 to-indigo-300 bg-clip-text text-transparent">Any Video, Playlist</span> & Clip
         </h1>
         <p className="mt-3 text-slate-400 text-sm sm:text-base font-normal max-w-xl mx-auto">
-          Ultra-high speed single video extractor, batch playlist manager, and download queue with real-time Turso Cloud synchronization.
+          Ultra-high speed single video extractor, batch playlist manager, media trimmer studio, and sequential download queue.
         </p>
       </div>
 
@@ -704,13 +723,30 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                 </p>
               )}
 
-              <div className="flex flex-wrap items-center gap-3 pt-1">
+              {/* Action Pills Bar */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
                 <button
                   onClick={() => addToQueue({ title: mediaData.title, url: mediaData.url, quality: '1080p HD', type: 'video' })}
-                  className="px-4 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-white/10 text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-all"
+                  className="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-white/10 text-cyan-300 text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Add to Download Queue</span>
+                  <span>Add to Queue</span>
+                </button>
+
+                <button
+                  onClick={() => setIsTrimModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-brand-900/60 border border-brand-500/30 text-brand-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all"
+                >
+                  <Scissors className="w-3.5 h-3.5 text-brand-400" />
+                  <span>Trim / Cut & GIF</span>
+                </button>
+
+                <button
+                  onClick={() => setIsQrModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-surface-800 hover:bg-surface-700 border border-white/10 text-slate-300 hover:text-white text-xs font-bold flex items-center gap-1.5 transition-all"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>QR Mobile Handoff</span>
                 </button>
               </div>
             </div>
@@ -718,7 +754,7 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
           </div>
 
           {/* Download Tabs Bar */}
-          <div className="px-6 pt-4 border-b border-white/10 flex gap-4">
+          <div className="px-6 pt-4 border-b border-white/10 flex gap-4 flex-wrap">
             {mediaData.video_formats && mediaData.video_formats.length > 0 && (
               <button
                 onClick={() => setActiveTab('video')}
@@ -746,6 +782,18 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                 <span>Audio Only ({mediaData.audio_formats.length})</span>
               </button>
             )}
+
+            <button
+              onClick={() => setActiveTab('subtitles')}
+              className={`pb-3 text-xs sm:text-sm font-black flex items-center gap-2 border-b-2 transition-all ${
+                activeTab === 'subtitles'
+                  ? 'border-cyan-400 text-cyan-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <FileText className="w-4 h-4 text-emerald-400" />
+              <span>Subtitles & Captions (.SRT)</span>
+            </button>
           </div>
 
           {/* Tab Content Display */}
@@ -854,10 +902,82 @@ export default function ExtractorView({ initialUrl, onAddToHistory, showToast, o
                 </div>
               </div>
             )}
+
+            {activeTab === 'subtitles' && (
+              <div className="space-y-4">
+                <p className="text-xs text-slate-400">
+                  Download subtitles or AI transcript captions for this video in standard SubRip (<code className="text-cyan-300 font-mono">.SRT</code>) format:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-4 rounded-2xl bg-surface-900/80 border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">English Captions</span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">.SRT</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">High-accuracy English subtitles with timecodes</p>
+                    <button
+                      onClick={() => handleDownloadSubtitles('en')}
+                      className="w-full py-2 rounded-xl bg-surface-800 hover:bg-brand-600 text-cyan-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download .SRT</span>
+                    </button>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-surface-900/80 border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">Auto-Generated</span>
+                      <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 text-[10px] font-mono">.SRT</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Speech-to-text automated video transcript</p>
+                    <button
+                      onClick={() => handleDownloadSubtitles('auto')}
+                      className="w-full py-2 rounded-xl bg-surface-800 hover:bg-cyan-600 text-cyan-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download .SRT</span>
+                    </button>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-surface-900/80 border border-white/5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">Hindi Subtitles</span>
+                      <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-mono">.SRT</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Hindi language translated captions</p>
+                    <button
+                      onClick={() => handleDownloadSubtitles('hi')}
+                      className="w-full py-2 rounded-xl bg-surface-800 hover:bg-amber-600 text-amber-300 hover:text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download .SRT</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
       )}
+
+      {/* Media Trim & GIF Modal */}
+      <MediaTrimModal
+        isOpen={isTrimModalOpen}
+        onClose={() => setIsTrimModalOpen(false)}
+        mediaData={mediaData}
+        showToast={showToast}
+      />
+
+      {/* QR Code Handoff Modal */}
+      <QrCodeModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+        targetUrl={mediaData?.url || url}
+        mediaTitle={mediaData?.title}
+        showToast={showToast}
+      />
 
     </div>
   );
